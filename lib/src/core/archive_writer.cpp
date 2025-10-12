@@ -9,6 +9,9 @@
 #include <iostream> // For progress bar
 #include <iomanip>
 #include <set>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 namespace prism {
 namespace core {
@@ -70,7 +73,10 @@ void create_archive(const std::string& archive_file, const std::vector<std::stri
         if (should_exclude(path, exclude_patterns)) {
             continue;
         }
-        
+
+        fs::path input_path_obj(path);
+        fs::path base_path = input_path_obj.parent_path();
+
         std::vector<std::string> files;
         if (is_directory(path)) {
             list_files_recursive(path, files, exclude_patterns);
@@ -83,7 +89,12 @@ void create_archive(const std::string& archive_file, const std::vector<std::stri
             
             const std::string& file_path = files[i];
             
-            std::string archive_path = use_full_path ? get_absolute_path(file_path) : file_path;
+            std::string archive_path;
+            if (use_full_path) {
+                archive_path = get_absolute_path(file_path);
+            } else {
+                archive_path = fs::relative(file_path, base_path).string();
+            }
             
             CompressionType actual_comp = should_compress(file_path, comp_type) ? comp_type : CompressionType::NONE;
             if (actual_comp != comp_type) {
@@ -172,7 +183,10 @@ void append_to_archive(const std::string& archive_file, const std::vector<std::s
         if (should_exclude(path, exclude_patterns)) {
             continue;
         }
-        
+
+        fs::path input_path_obj(path);
+        fs::path base_path = input_path_obj.parent_path();
+
         std::vector<std::string> files;
         if (is_directory(path)) {
             list_files_recursive(path, files, exclude_patterns);
@@ -184,7 +198,12 @@ void append_to_archive(const std::string& archive_file, const std::vector<std::s
             show_progress_bar(i + 1, files.size());
             
             const std::string& file_path = files[i];
-            std::string archive_path = use_full_path ? get_absolute_path(file_path) : file_path;
+            std::string archive_path;
+            if (use_full_path) {
+                archive_path = get_absolute_path(file_path);
+            } else {
+                archive_path = fs::relative(file_path, base_path).string();
+            }
             
             if (existing_paths.count(archive_path)) {
                 if (ignore_errors) {

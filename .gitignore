@@ -1,0 +1,5 @@
+# CMake build files
+build/
+
+# Compiled binaries
+app/prismzip

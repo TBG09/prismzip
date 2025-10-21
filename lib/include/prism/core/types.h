@@ -18,7 +18,9 @@ enum class CompressionType : uint8_t {
     GZIP = 4,
     LZ4 = 5,
     ZSTD = 6,
-    BROTLI = 7
+    BROTLI = 7,
+    SNAPPY = 8,
+    LZO = 9
 };
 
 enum class HashType : uint8_t { 
@@ -33,7 +35,10 @@ enum class HashType : uint8_t {
     SHA3_256 = 8,
     SHA3_512 = 9,
     RIPEMD160 = 10,
-    WHIRLPOOL = 11
+    WHIRLPOOL = 11,
+    SHA224 = 12,
+    SHA3_224 = 13,
+    SHA3_384 = 14
 };
 
 struct FileMetadata {

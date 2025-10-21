@@ -4,12 +4,13 @@
 #include <prism/core/logging.h>
 #include <prism/compression.h>
 #include <prism/hashing/openssl_hasher.h>
-#include "ui_utils.h"
+#include <prism/core/ui_utils.h>
 #include <fstream>
 #include <iostream> // For progress bar
 #include <iomanip>
 #include <set>
 #include <filesystem>
+#include <sys/stat.h> // Required for stat struct
 
 namespace fs = std::filesystem;
 
@@ -44,7 +45,18 @@ std::vector<char> create_archive_header(const std::string& archive_path, Compres
 
 void create_archive(const std::string& archive_file, const std::vector<std::string>& paths,
                    CompressionType comp_type, int level, HashType hash_type, 
-                   bool ignore_errors, const std::vector<std::string>& exclude_patterns, bool use_full_path) {
+                   bool ignore_errors, const std::vector<std::string>& exclude_patterns, bool use_full_path, bool auto_yes) {
+    // Disk space verification
+    uint64_t estimated_size = estimate_archive_size(archive_file, paths, comp_type, ignore_errors, exclude_patterns, use_full_path);
+    uint64_t free_space = get_free_disk_space(fs::path(archive_file).parent_path().string());
+
+    if (estimated_size > free_space) {
+        std::string message = "Warning: Estimated archive size (" + format_size(estimated_size) + ") exceeds available disk space (" + format_size(free_space) + ") on target drive. Continue anyway?";
+        if (!confirm_action(message, auto_yes)) {
+            throw std::runtime_error("Archive creation cancelled by user.");
+        }
+    }
+
     std::ofstream out(archive_file, std::ios::binary);
     if (!out) {
         throw std::runtime_error("Cannot create archive file: " + archive_file);
@@ -76,6 +88,9 @@ void create_archive(const std::string& archive_file, const std::vector<std::stri
 
         fs::path input_path_obj(path);
         fs::path base_path = input_path_obj.parent_path();
+        if (base_path.empty()) {
+            base_path = ".";
+        }
 
         std::vector<std::string> files;
         if (is_directory(path)) {
@@ -146,11 +161,22 @@ void create_archive(const std::string& archive_file, const std::vector<std::stri
 
 void append_to_archive(const std::string& archive_file, const std::vector<std::string>& paths,
                       CompressionType comp_type, int level, HashType hash_type, 
-                      bool ignore_errors, const std::vector<std::string>& exclude_patterns, bool use_full_path) {
+                      bool ignore_errors, const std::vector<std::string>& exclude_patterns, bool use_full_path, bool auto_yes) {
     if (!file_exists(archive_file)) {
         throw std::runtime_error("Archive file not found: " + archive_file);
     }
     
+    // Disk space verification
+    uint64_t estimated_size = estimate_archive_size(archive_file, paths, comp_type, ignore_errors, exclude_patterns, use_full_path);
+    uint64_t free_space = get_free_disk_space(fs::path(archive_file).parent_path().string());
+
+    if (estimated_size > free_space) {
+        std::string message = "Warning: Estimated archive size (" + format_size(estimated_size) + ") exceeds available disk space (" + format_size(free_space) + ") on target drive. Continue anyway?";
+        if (!confirm_action(message, auto_yes)) {
+            throw std::runtime_error("Archive append cancelled by user.");
+        }
+    }
+
     std::vector<FileMetadata> existing_items = read_archive_metadata(archive_file);
     std::set<std::string> existing_paths;
     for (const auto& item : existing_items) {
@@ -186,6 +212,9 @@ void append_to_archive(const std::string& archive_file, const std::vector<std::s
 
         fs::path input_path_obj(path);
         fs::path base_path = input_path_obj.parent_path();
+        if (base_path.empty()) {
+            base_path = ".";
+        }
 
         std::vector<std::string> files;
         if (is_directory(path)) {
@@ -252,6 +281,72 @@ void append_to_archive(const std::string& archive_file, const std::vector<std::s
     log("Items added: " + std::to_string(total_files) + " files", LOG_SUM);
     log("Total uncompressed data: " + format_size(total_uncompressed), LOG_SUM);
     log("Total compressed data: " + format_size(total_compressed), LOG_SUM);
+}
+
+uint64_t estimate_archive_size(const std::string& archive_file, const std::vector<std::string>& paths,
+                             CompressionType comp_type,
+                             bool ignore_errors, const std::vector<std::string>& exclude_patterns, bool use_full_path) {
+    uint64_t total_uncompressed_size = 0;
+    double compression_ratio = 1.0; // 1.0 means 100% of original size
+
+    // Determine a rough compression ratio based on type
+    switch (comp_type) {
+        case CompressionType::NONE:
+            compression_ratio = 1.0;
+            break;
+        case CompressionType::ZLIB:
+        case CompressionType::BZIP2:
+        case CompressionType::LZMA:
+        case CompressionType::GZIP:
+        case CompressionType::LZ4:
+        case CompressionType::ZSTD:
+        case CompressionType::BROTLI:
+            compression_ratio = 0.5; // Assume 50% compression for now
+            break;
+        default:
+            compression_ratio = 1.0; // Unknown type, assume no compression
+            break;
+    }
+
+    for (const auto& path : paths) {
+        if (!file_exists(path)) {
+            if (ignore_errors) {
+                log("Warning: Path not found for size estimation: '" + path + "' (ignored)", LOG_WARN);
+                continue;
+            } else {
+                throw std::runtime_error("Path not found for size estimation: " + path);
+            }
+        }
+
+        if (should_exclude(path, exclude_patterns)) {
+            continue;
+        }
+
+        std::vector<std::string> files_to_process;
+        if (is_directory(path)) {
+            list_files_recursive(path, files_to_process, exclude_patterns);
+        } else {
+            files_to_process.push_back(path);
+        }
+
+        for (const auto& file_path : files_to_process) {
+            struct stat st;
+            if (stat(file_path.c_str(), &st) == 0) {
+                total_uncompressed_size += st.st_size;
+            } else {
+                if (ignore_errors) {
+                    log("Warning: Could not get size of file: '" + file_path + "' (ignored)", LOG_WARN);
+                } else {
+                    throw std::runtime_error("Could not get size of file: " + file_path);
+                }
+            }
+        }
+    }
+
+    // Add some overhead for archive metadata (e.g., 1% of total size, or a fixed minimum)
+    uint64_t metadata_overhead = std::max((uint64_t)1024, total_uncompressed_size / 100); // Min 1KB or 1%
+
+    return (uint64_t)(total_uncompressed_size * compression_ratio) + metadata_overhead;
 }
 
 } // namespace core

@@ -10,11 +10,15 @@ namespace core {
 
 void create_archive(const std::string& archive_file, const std::vector<std::string>& paths,
                    CompressionType comp_type, int level, HashType hash_type, 
-                   bool ignore_errors, const std::vector<std::string>& exclude_patterns, bool use_full_path);
+                   bool ignore_errors, const std::vector<std::string>& exclude_patterns, bool use_full_path, bool auto_yes = false);
 
 void append_to_archive(const std::string& archive_file, const std::vector<std::string>& paths,
                       CompressionType comp_type, int level, HashType hash_type, 
-                      bool ignore_errors, const std::vector<std::string>& exclude_patterns, bool use_full_path);
+                      bool ignore_errors, const std::vector<std::string>& exclude_patterns, bool use_full_path, bool auto_yes = false);
+
+uint64_t estimate_archive_size(const std::string& archive_file, const std::vector<std::string>& paths,
+                             CompressionType comp_type, 
+                             bool ignore_errors, const std::vector<std::string>& exclude_patterns, bool use_full_path);
 
 std::vector<char> create_archive_header(const std::string& archive_path, CompressionType compression_type,
                                    uint8_t level, HashType hash_type, const std::string& file_hash,

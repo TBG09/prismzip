@@ -20,6 +20,9 @@ const EVP_MD* get_evp_md(core::HashType hash_type) {
         case core::HashType::SHA3_256: return EVP_sha3_256();
         case core::HashType::SHA3_512: return EVP_sha3_512();
         case core::HashType::RIPEMD160: return EVP_ripemd160();
+        case core::HashType::SHA224: return EVP_sha224();
+        case core::HashType::SHA3_224: return EVP_sha3_224();
+        case core::HashType::SHA3_384: return EVP_sha3_384();
         default: return nullptr;
     }
 }

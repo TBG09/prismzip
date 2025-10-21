@@ -6,6 +6,7 @@
 #include "lz4.h"
 #include "zstd.h"
 #include "brotli.h"
+#include <stdexcept> // Required for std::runtime_error
 
 namespace prism {
 namespace compression {
@@ -27,6 +28,10 @@ std::vector<char> compress_data(const std::vector<char>& data, prism::core::Comp
             return zstd_compress(data, level);
         case prism::core::CompressionType::BROTLI:
             return brotli_compress(data, level);
+        case prism::core::CompressionType::SNAPPY:
+            throw std::runtime_error("SNAPPY compression not yet implemented.");
+        case prism::core::CompressionType::LZO:
+            throw std::runtime_error("LZO compression not yet implemented.");
         default:
             prism::core::log("Warning: Compression type not supported, storing uncompressed", prism::core::LOG_WARN);
             return data;
@@ -50,6 +55,10 @@ std::vector<char> decompress_data(const std::vector<char>& data, prism::core::Co
             return zstd_decompress(data, original_size);
         case prism::core::CompressionType::BROTLI:
             return brotli_decompress(data, original_size);
+        case prism::core::CompressionType::SNAPPY:
+            throw std::runtime_error("SNAPPY decompression not yet implemented.");
+        case prism::core::CompressionType::LZO:
+            throw std::runtime_error("LZO decompression not yet implemented.");
         default:
             prism::core::log("Warning: Decompression type not supported", prism::core::LOG_WARN);
             return data;

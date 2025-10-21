@@ -2,7 +2,7 @@
 #include <prism/core/archive_reader.h>
 #include <prism/core/file_utils.h>
 #include <prism/core/logging.h>
-#include "ui_utils.h"
+#include <prism/core/ui_utils.h>
 #include <set>
 #include <fstream>
 #include <iostream> // For progress bar

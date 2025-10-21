@@ -4,7 +4,7 @@
 #include <prism/core/logging.h>
 #include <prism/compression.h>
 #include <prism/hashing/openssl_hasher.h>
-#include "ui_utils.h"
+#include <prism/core/ui_utils.h>
 #include <fstream>
 #include <iostream>
 #include <unistd.h> // for getpid()

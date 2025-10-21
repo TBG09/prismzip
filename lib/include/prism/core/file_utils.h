@@ -14,6 +14,9 @@ bool file_exists(const std::string& path);
 bool is_directory(const std::string& path);
 std::string get_extension(const std::string& path);
 std::string get_absolute_path(const std::string& path);
+
+uint64_t get_free_disk_space(const std::string& path);
+
 void list_files_recursive(const std::string& dir_path, std::vector<std::string>& files, const std::vector<std::string>& exclude_patterns);
 bool match_pattern(const std::string& path, const std::string& pattern);
 bool should_exclude(const std::string& path, const std::vector<std::string>& exclude_patterns);

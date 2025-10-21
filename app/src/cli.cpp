@@ -118,6 +118,7 @@ int run_cli(int argc, char* argv[]) {
     bool ignore_errors = false;
     bool use_full_path = false;
     std::vector<std::string> exclude_patterns;
+    bool auto_yes = false;
     
     for (int i = 3; i < argc; i++) {
         std::string arg = argv[i];
@@ -126,6 +127,8 @@ int run_cli(int argc, char* argv[]) {
             is_verb_en = true;
         } else if (arg == "-i") {
             ignore_errors = true;
+        } else if (arg == "-y") {
+            auto_yes = true;
         } else if (arg == "--no-color") {
             color_en = false;
         } else if (arg == "--full") {
@@ -167,10 +170,10 @@ int run_cli(int argc, char* argv[]) {
     try {
         if (command == "create") {
             if (paths.empty()) { print_command_help("create"); return 1; }
-            core::create_archive(archive_file, paths, comp_type, comp_level, hash_type, ignore_errors, exclude_patterns, use_full_path);
+            core::create_archive(archive_file, paths, comp_type, comp_level, hash_type, ignore_errors, exclude_patterns, use_full_path, auto_yes);
         } else if (command == "append") {
             if (paths.empty()) { print_command_help("append"); return 1; }
-            core::append_to_archive(archive_file, paths, comp_type, comp_level, hash_type, ignore_errors, exclude_patterns, use_full_path);
+            core::append_to_archive(archive_file, paths, comp_type, comp_level, hash_type, ignore_errors, exclude_patterns, use_full_path, auto_yes);
         } else if (command == "list") {
             core::list_archive(archive_file, false); // false for not-raw
         } else if (command == "extract") {

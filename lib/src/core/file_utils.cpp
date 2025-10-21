@@ -1,3 +1,4 @@
+#include <sys/statvfs.h>
 #include <prism/core/file_utils.h>
 #include <prism/core/types.h>
 #include <sys/stat.h>
@@ -57,20 +58,48 @@ bool should_compress(const std::string& file_path, CompressionType compression_t
 }
 
 bool match_pattern(const std::string& path, const std::string& pattern) {
-    std::string regex_pattern = pattern;
-    regex_pattern = std::regex_replace(regex_pattern, std::regex(R"([.^$|()[\\\]{}*+?])"), R"(\\\\\$&)");
-    regex_pattern = std::regex_replace(regex_pattern, std::regex(R"(\\\\*)"), ".*");
-    regex_pattern = std::regex_replace(regex_pattern, std::regex(R"(\\\\?)"), ".");
+    log("match_pattern: path='" + path + "', original_pattern='" + pattern + "'", LOG_VERBOSE);
+    std::string regex_pattern_str;
+    for (char c : pattern) {
+        if (c == '.' || c == '^' || c == '$' || c == '|' || c == '(' || c == ')' ||
+            c == '[' || c == ']' || c == '{' || c == '}' || c == '*' || c == '+' ||
+            c == '?' || c == '\\') { // Escaping backslash itself
+            regex_pattern_str += '\\'; // Add a literal backslash
+        }
+        regex_pattern_str += c;
+    }
+
+    // Convert glob * to regex .*
+    // The regex for matching a literal asterisk is "\\*"
+    regex_pattern_str = std::regex_replace(regex_pattern_str, std::regex("\\*"), ".*");
+    // Convert glob ? to regex .
+    // The regex for matching a literal question mark is "\\?"
+    regex_pattern_str = std::regex_replace(regex_pattern_str, std::regex("\\?"), ".");
+
+    log("match_pattern: generated regex_pattern='" + regex_pattern_str + "'", LOG_VERBOSE);
     
     try {
-        std::regex re(regex_pattern);
-        return std::regex_search(path, re);
+        log("match_pattern: compiling regex: '" + regex_pattern_str + "'", LOG_VERBOSE);
+        std::regex re(regex_pattern_str);
+        bool result = std::regex_search(path, re);
+        log("match_pattern: regex_search result=" + std::to_string(result), LOG_VERBOSE);
+        return result;
+    } catch (const std::regex_error& e) {
+        log("match_pattern: regex_error: " + std::string(e.what()), LOG_WARN);
+        // Fallback for invalid regex patterns, treat as simple substring search
+        bool result = path.find(pattern) != std::string::npos;
+        log("match_pattern: fallback substring search result=" + std::to_string(result), LOG_VERBOSE);
+        return result;
     } catch (...) {
-        return path.find(pattern) != std::string::npos;
+        log("match_pattern: unknown error in regex processing", LOG_WARN);
+        bool result = path.find(pattern) != std::string::npos;
+        log("match_pattern: fallback substring search result=" + std::to_string(result), LOG_VERBOSE);
+        return result;
     }
 }
 
 bool should_exclude(const std::string& path, const std::vector<std::string>& exclude_patterns) {
+    log("should_exclude: path='" + path + "', exclude_patterns_count=" + std::to_string(exclude_patterns.size()), LOG_VERBOSE);
     for (const auto& pattern : exclude_patterns) {
         if (match_pattern(path, pattern)) {
             log("Excluding '" + path + "' (matches pattern: " + pattern + ")", LOG_VERBOSE);
@@ -117,6 +146,15 @@ void list_files_recursive(const std::string& dir_path, std::vector<std::string>&
         }
     }
     closedir(dir);
+}
+
+uint64_t get_free_disk_space(const std::string& path) {
+    struct statvfs vfs;
+    if (statvfs(path.c_str(), &vfs) == 0) {
+        return (uint64_t)vfs.f_bsize * vfs.f_bavail;
+    }
+    log("Warning: Could not get free disk space for path: '" + path + "'", LOG_WARN);
+    return 0; // Return 0 on error
 }
 
 } // namespace core

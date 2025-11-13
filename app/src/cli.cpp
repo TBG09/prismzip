@@ -119,6 +119,8 @@ int run_cli(int argc, char* argv[]) {
     bool use_full_path = false;
     std::vector<std::string> exclude_patterns;
     bool auto_yes = false;
+    bool no_overwrite = false;
+    bool no_verify = false;
     
     for (int i = 3; i < argc; i++) {
         std::string arg = argv[i];
@@ -129,6 +131,10 @@ int run_cli(int argc, char* argv[]) {
             ignore_errors = true;
         } else if (arg == "-y") {
             auto_yes = true;
+        } else if (arg == "-n") {
+            no_verify = true;
+        } else if (arg == "--no-overwrite") {
+            no_overwrite = true;
         } else if (arg == "--no-color") {
             color_en = false;
         } else if (arg == "--full") {
@@ -153,7 +159,8 @@ int run_cli(int argc, char* argv[]) {
             std::string hash_str = argv[++i];
             if (core::HASH_MAP.count(hash_str)) {
                 hash_type = core::HASH_MAP.at(hash_str);
-            } else {
+            }
+            else {
                 err("Error: Invalid hash type '" + hash_str + "'");
                 return 1;
             }
@@ -177,7 +184,7 @@ int run_cli(int argc, char* argv[]) {
         } else if (command == "list") {
             core::list_archive(archive_file, false); // false for not-raw
         } else if (command == "extract") {
-            core::extract_archive(archive_file, output_dir, paths);
+            core::extract_archive(archive_file, output_dir, paths, no_overwrite, no_verify);
         } else if (command == "remove") {
             if (paths.empty()) { print_command_help("remove"); return 1; }
             core::remove_from_archive(archive_file, paths, ignore_errors);
@@ -310,10 +317,13 @@ void print_command_help(const std::string& command) {
         std::cout << "Optional:\n";
         std::cout << "  [paths...]      Specific files to extract (default: all)\n";
         std::cout << "  -o <dir>        Output directory (default: current directory)\n";
-        std::cout << "  -v              Verbose output\n\n";
+        std::cout << "  -v              Verbose output\n";
+        std::cout << "  -n              No verification on extraction\n";
+        std::cout << "  --no-overwrite  Do not overwrite existing files on extraction\n\n";
         std::cout << "Examples:\n";
         std::cout << "  prismzip extract backup.przm -o output/\n";
-        std::cout << "  prismzip extract backup.przm file.txt folder/file2.txt -o restore/\n\n";
+        std::cout << "  prismzip extract backup.przm file.txt folder/file2.txt -o restore/\n";
+        std::cout << "  prismzip extract backup.przm -o output/ --no-overwrite -n\n\n";
     } else if (command == "remove") {
         std::cout << "Usage: prismzip remove <archive_file> <paths...> [options]\n\n";
         std::cout << "Remove files from an archive.\n\n";

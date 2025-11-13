@@ -8,7 +8,7 @@ namespace prism {
 namespace core {
 
 void extract_archive(const std::string& archive_file, const std::string& output_dir, 
-                     const std::vector<std::string>& files_to_extract);
+                     const std::vector<std::string>& files_to_extract, bool no_overwrite, bool no_verify);
 
 } // namespace core
 } // namespace prism

@@ -19,7 +19,7 @@
 namespace prism {
 namespace core {
 
-void extract_non_solid_file(const std::string& archive_file, const FileMetadata& item, const std::string& output_dir, bool no_overwrite, bool no_verify, std::atomic<int>& files_extracted, std::atomic<int>& files_skipped, std::atomic<uint64_t>& bytes_extracted, std::atomic<int>& hash_mismatches, std::atomic<int>& hashes_checked, std::atomic<int>& progress_counter, size_t total_items_to_process, std::mutex& cout_mutex, bool raw_output, bool use_basic_chars) {
+void extract_non_solid_file(const std::string& archive_file, const FileMetadata& item, const std::string& output_dir, bool no_overwrite, bool no_verify, std::atomic<int>& files_extracted, std::atomic<int>& files_skipped, std::atomic<uint64_t>& bytes_extracted, std::atomic<int>& hash_mismatches, std::atomic<int>& hashes_checked, std::atomic<int>& progress_counter, size_t total_items_to_process, std::mutex& cout_mutex, bool raw_output, bool use_basic_chars, bool no_preserve_props) {
     std::string out_path = output_dir + "/" + item.path;
 
     if (no_overwrite && file_exists(out_path)) {
@@ -62,6 +62,10 @@ void extract_non_solid_file(const std::string& archive_file, const FileMetadata&
     
     out_file.write(decompressed.data(), decompressed.size());
     out_file.close();
+
+    if (!no_preserve_props) {
+        set_file_properties(out_path, item);
+    }
     
     files_extracted++;
     bytes_extracted += item.file_size;
@@ -88,7 +92,7 @@ void extract_non_solid_file(const std::string& archive_file, const FileMetadata&
     }
 }
 
-void extract_solid_block(const std::string& archive_file, const std::vector<FileMetadata>& block_items, const std::string& output_dir, bool no_overwrite, bool no_verify, std::atomic<int>& files_extracted, std::atomic<int>& files_skipped, std::atomic<uint64_t>& bytes_extracted, std::atomic<int>& hash_mismatches, std::atomic<int>& hashes_checked, std::atomic<int>& progress_counter, size_t total_items_to_process, std::mutex& cout_mutex, bool raw_output, bool use_basic_chars) {
+void extract_solid_block(const std::string& archive_file, const std::vector<FileMetadata>& block_items, const std::string& output_dir, bool no_overwrite, bool no_verify, std::atomic<int>& files_extracted, std::atomic<int>& files_skipped, std::atomic<uint64_t>& bytes_extracted, std::atomic<int>& hash_mismatches, std::atomic<int>& hashes_checked, std::atomic<int>& progress_counter, size_t total_items_to_process, std::mutex& cout_mutex, bool raw_output, bool use_basic_chars, bool no_preserve_props) {
     if (block_items.empty()) return;
 
     const FileMetadata& first_item = block_items[0]; // All items in block share same block info
@@ -153,6 +157,10 @@ void extract_solid_block(const std::string& archive_file, const std::vector<File
         out_file.write(file_data.data(), file_data.size());
         out_file.close();
 
+        if (!no_preserve_props) {
+            set_file_properties(out_path, item);
+        }
+
         files_extracted++;
         bytes_extracted += item.file_size;
 
@@ -180,7 +188,7 @@ void extract_solid_block(const std::string& archive_file, const std::vector<File
 }
 
 ArchiveExtractionResult extract_archive(const std::string& archive_file, const std::string& output_dir, 
-                     const std::vector<std::string>& files_to_extract, bool no_overwrite, bool no_verify, int num_threads, bool raw_output, bool use_basic_chars) {
+                     const std::vector<std::string>& files_to_extract, bool no_overwrite, bool no_verify, int num_threads, bool raw_output, bool use_basic_chars, bool no_preserve_props) {
     std::vector<FileMetadata> items = read_archive_metadata(archive_file);
     
     std::vector<FileMetadata> items_to_process;
@@ -253,14 +261,14 @@ ArchiveExtractionResult extract_archive(const std::string& archive_file, const s
         // Enqueue tasks for non-solid files
         for (const auto& item : non_solid_files) {
             results.emplace_back(pool.enqueue([&, item] {
-                extract_non_solid_file(archive_file, item, output_dir, no_overwrite, no_verify, files_extracted, files_skipped, bytes_extracted, hash_mismatches, hashes_checked, progress_counter, items_to_process.size(), cout_mutex, raw_output, use_basic_chars);
+                extract_non_solid_file(archive_file, item, output_dir, no_overwrite, no_verify, files_extracted, files_skipped, bytes_extracted, hash_mismatches, hashes_checked, progress_counter, items_to_process.size(), cout_mutex, raw_output, use_basic_chars, no_preserve_props);
             }));
         }
 
         // Enqueue tasks for solid blocks
         for (const auto& pair : solid_blocks) {
             results.emplace_back(pool.enqueue([&, pair] {
-                extract_solid_block(archive_file, pair.second, output_dir, no_overwrite, no_verify, files_extracted, files_skipped, bytes_extracted, hash_mismatches, hashes_checked, progress_counter, items_to_process.size(), cout_mutex, raw_output, use_basic_chars);
+                extract_solid_block(archive_file, pair.second, output_dir, no_overwrite, no_verify, files_extracted, files_skipped, bytes_extracted, hash_mismatches, hashes_checked, progress_counter, items_to_process.size(), cout_mutex, raw_output, use_basic_chars, no_preserve_props);
             }));
         }
 
@@ -286,8 +294,6 @@ ArchiveExtractionResult extract_archive(const std::string& archive_file, const s
             } else {
                 log("Integrity Check: " + std::to_string(hash_mismatches.load()) + " hash mismatches found.", LOG_WARN);
             }
-        } else {
-            log("Integrity Check: No hashes were stored in the archive for verification.", LOG_SUM);
         }
     } else {
         log("Integrity Check: Skipped.", LOG_SUM);

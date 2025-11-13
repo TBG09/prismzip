@@ -11,6 +11,7 @@
 #include <cstdlib> // For realpath
 #include <filesystem>
 #include <system_error>
+#include <fcntl.h> // Required for AT_FDCWD
 
 #include <prism/core/logging.h>
 
@@ -164,6 +165,60 @@ uint64_t get_free_disk_space(const std::string& path) {
         log("Warning: Could not get free disk space for path '" + path + "': " + e.what(), LOG_WARN);
         return 0;
     }
+}
+
+bool get_file_properties(const std::string& path, FileMetadata& metadata) {
+    struct stat st;
+    if (stat(path.c_str(), &st) != 0) {
+        log("Failed to get properties for file: " + path, LOG_ERROR);
+        return false;
+    }
+
+    // Use st_mtime for modification time
+    metadata.modification_time = st.st_mtime;
+
+    // Use st_ctime for creation time (or st_birthtime if available and different)
+    #ifdef __APPLE__
+        metadata.creation_time = st.st_birthtime;
+    #else
+        metadata.creation_time = st.st_ctime; // On Linux, st_ctime is last status change, not creation
+    #endif
+
+    metadata.permissions = st.st_mode;
+    metadata.uid = st.st_uid;
+    metadata.gid = st.st_gid;
+
+    return true;
+}
+
+bool set_file_properties(const std::string& path, const FileMetadata& metadata) {
+    // Set permissions
+    if (chmod(path.c_str(), metadata.permissions) != 0) {
+        log("Failed to set permissions for file: " + path, LOG_WARN);
+        // Continue, as this might be due to permissions of the current user
+    }
+
+    // Set ownership
+    // Only attempt to set ownership if not root and uid/gid are not default (0)
+    // or if the current user is root.
+    if (getuid() == 0 || (metadata.uid != 0 && metadata.gid != 0)) {
+        if (chown(path.c_str(), metadata.uid, metadata.gid) != 0) {
+            log("Failed to set ownership for file: " + path, LOG_WARN);
+        }
+    }
+
+    // Set modification and access times
+    struct timespec times[2];
+    times[0].tv_sec = metadata.modification_time; // Access time (not stored, using modification for both)
+    times[0].tv_nsec = 0;
+    times[1].tv_sec = metadata.modification_time; // Modification time
+    times[1].tv_nsec = 0;
+
+    if (utimensat(AT_FDCWD, path.c_str(), times, 0) != 0) {
+        log("Failed to set modification time for file: " + path, LOG_WARN);
+    }
+    
+    return true;
 }
 
 } // namespace core

@@ -13,7 +13,9 @@ namespace core {
 
 inline std::vector<char> create_archive_header(const std::string& archive_path, CompressionType compression_type,
                                    uint8_t level, HashType hash_type, const std::string& file_hash,
-                                   uint64_t file_size, uint64_t compressed_size) {
+                                   uint64_t file_size, uint64_t compressed_size,
+                                   uint64_t creation_time, uint64_t modification_time,
+                                   uint32_t permissions, uint32_t uid, uint32_t gid) {
     log("Creating header for '" + archive_path + "'...", LOG_VERBOSE);
     
     std::vector<char> header;
@@ -32,6 +34,12 @@ inline std::vector<char> create_archive_header(const std::string& archive_path, 
     
     header.insert(header.end(), (char*)&file_size, (char*)&file_size + 8);
     header.insert(header.end(), (char*)&compressed_size, (char*)&compressed_size + 8);
+
+    header.insert(header.end(), (char*)&creation_time, (char*)&creation_time + 8);
+    header.insert(header.end(), (char*)&modification_time, (char*)&modification_time + 8);
+    header.insert(header.end(), (char*)&permissions, (char*)&permissions + 4);
+    header.insert(header.end(), (char*)&uid, (char*)&uid + 4);
+    header.insert(header.end(), (char*)&gid, (char*)&gid + 4);
     
     log("Header creation complete.", LOG_VERBOSE);
     return header;

@@ -30,44 +30,39 @@ uint64_t estimate_archive_size(const std::string& archive_file, const std::vecto
 
 // Helper function for solid archive metadata
 
-inline std::vector<char> create_solid_file_metadata(const std::string& archive_path, HashType hash_type, const std::string& file_hash, uint64_t file_size) {
+inline std::vector<char> create_solid_file_metadata(const std::string& archive_path, HashType hash_type, const std::string& file_hash, uint64_t file_size,
+                                                    uint64_t creation_time, uint64_t modification_time,
+                                                    uint32_t permissions, uint32_t uid, uint32_t gid) {
 
     std::vector<char> metadata;
 
-    
-
     uint32_t path_len = archive_path.size();
-
     metadata.resize(metadata.size() + 4);
-
     memcpy(&metadata[metadata.size() - 4], &path_len, 4);
-
     metadata.insert(metadata.end(), archive_path.begin(), archive_path.end());
-
     
-
     metadata.push_back(static_cast<uint8_t>(hash_type));
-
     
-
     uint16_t hash_len = file_hash.size();
-
     metadata.resize(metadata.size() + 2);
-
     memcpy(&metadata[metadata.size() - 2], &hash_len, 2);
-
     metadata.insert(metadata.end(), file_hash.begin(), file_hash.end());
-
     
-
     metadata.resize(metadata.size() + 8);
-
     memcpy(&metadata[metadata.size() - 8], &file_size, 8);
 
+    metadata.resize(metadata.size() + 8);
+    memcpy(&metadata[metadata.size() - 8], &creation_time, 8);
+    metadata.resize(metadata.size() + 8);
+    memcpy(&metadata[metadata.size() - 8], &modification_time, 8);
+    metadata.resize(metadata.size() + 4);
+    memcpy(&metadata[metadata.size() - 4], &permissions, 4);
+    metadata.resize(metadata.size() + 4);
+    memcpy(&metadata[metadata.size() - 4], &uid, 4);
+    metadata.resize(metadata.size() + 4);
+    memcpy(&metadata[metadata.size() - 4], &gid, 4);
     
-
     return metadata;
-
 }
 
 
@@ -212,15 +207,71 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
 
 
-            // Calculate hash
-
-            std::string hash = hashing::calculate_hash(file_path, hash_type);
+                        // Calculate hash
 
 
 
-            // Create and append metadata
+                        std::string hash = hashing::calculate_hash(file_path, hash_type);
 
-            std::vector<char> file_metadata = create_solid_file_metadata(archive_path, hash_type, hash, data.size());
+
+
+            
+
+
+
+                        FileMetadata file_props;
+
+
+
+                        if (!get_file_properties(file_path, file_props)) {
+
+
+
+                            if (ignore_errors) {
+
+
+
+                                log("Warning: Failed to get properties for file: '" + file_path + "' (ignored)", LOG_WARN);
+
+
+
+                                continue;
+
+
+
+                            } else {
+
+
+
+                                throw std::runtime_error("Failed to get properties for file: " + file_path);
+
+
+
+                            }
+
+
+
+                        }
+
+
+
+            
+
+
+
+                        // Create and append metadata
+
+
+
+                        std::vector<char> file_metadata = create_solid_file_metadata(archive_path, hash_type, hash, data.size(),
+
+
+
+                                                                                     file_props.creation_time, file_props.modification_time,
+
+
+
+                                                                                     file_props.permissions, file_props.uid, file_props.gid);
 
             metadata_block.insert(metadata_block.end(), file_metadata.begin(), file_metadata.end());
 
@@ -456,9 +507,67 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
                     
 
-                    std::vector<char> header = create_archive_header(archive_path, actual_comp, level, 
+                                        
 
-                                                               hash_type, hash, data.size(), compressed.size());
+                    
+
+                                        FileMetadata file_props;
+
+                    
+
+                                        if (!get_file_properties(file_path, file_props)) {
+
+                    
+
+                                            if (ignore_errors) {
+
+                    
+
+                                                std::lock_guard<std::mutex> lock(cout_mutex);
+
+                    
+
+                                                log("Warning: Failed to get properties for file: '" + file_path + "' (ignored)", LOG_WARN);
+
+                    
+
+                                                return;
+
+                    
+
+                                            } else {
+
+                    
+
+                                                throw std::runtime_error("Failed to get properties for file: " + file_path);
+
+                    
+
+                                            }
+
+                    
+
+                                        }
+
+                    
+
+                    
+
+                    
+
+                                        std::vector<char> header = create_archive_header(archive_path, actual_comp, level, 
+
+                    
+
+                                                                                   hash_type, hash, data.size(), compressed.size(),
+
+                    
+
+                                                                                   file_props.creation_time, file_props.modification_time,
+
+                    
+
+                                                                                   file_props.permissions, file_props.uid, file_props.gid);
 
                     
 
@@ -627,7 +736,20 @@ ArchiveCreationResult append_to_archive(const std::string& archive_file, const s
             total_uncompressed_size += data.size();
 
             std::string hash = hashing::calculate_hash(file_path, hash_type);
-            std::vector<char> file_metadata = create_solid_file_metadata(archive_path, hash_type, hash, data.size());
+            
+            FileMetadata file_props;
+            if (!get_file_properties(file_path, file_props)) {
+                if (ignore_errors) {
+                    log("Warning: Failed to get properties for file: '" + file_path + "' (ignored)", LOG_WARN);
+                    continue;
+                } else {
+                    throw std::runtime_error("Failed to get properties for file: " + file_path);
+                }
+            }
+
+            std::vector<char> file_metadata = create_solid_file_metadata(archive_path, hash_type, hash, data.size(),
+                                                                         file_props.creation_time, file_props.modification_time,
+                                                                         file_props.permissions, file_props.uid, file_props.gid);
             metadata_block.insert(metadata_block.end(), file_metadata.begin(), file_metadata.end());
             
             files_added++;
@@ -737,8 +859,22 @@ ArchiveCreationResult append_to_archive(const std::string& archive_file, const s
                     std::string hash = hashing::calculate_hash(file_path, hash_type);
                     std::vector<char> compressed = compression::compress_data(data, actual_comp, level);
                     
+                    
+                    FileMetadata file_props;
+                    if (!get_file_properties(file_path, file_props)) {
+                        if (ignore_errors) {
+                            std::lock_guard<std::mutex> lock(cout_mutex);
+                            log("Warning: Failed to get properties for file: '" + file_path + "' (ignored)", LOG_WARN);
+                            return;
+                        } else {
+                            throw std::runtime_error("Failed to get properties for file: " + file_path);
+                        }
+                    }
+
                     std::vector<char> header = create_archive_header(archive_path, actual_comp, level, 
-                                                               hash_type, hash, data.size(), compressed.size());
+                                                               hash_type, hash, data.size(), compressed.size(),
+                                                               file_props.creation_time, file_props.modification_time,
+                                                               file_props.permissions, file_props.uid, file_props.gid);
                     
                     {
                         std::lock_guard<std::mutex> lock(out_mutex);

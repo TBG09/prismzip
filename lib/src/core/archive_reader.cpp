@@ -40,6 +40,13 @@ FileMetadata read_non_solid_file_metadata(std::ifstream& f, uint64_t& current_of
     f.read((char*)&item.compressed_size, 8);
     if (f.gcount() < 16) throw std::runtime_error("Unexpected EOF while reading file/compressed size.");
     
+    f.read((char*)&item.creation_time, 8);
+    f.read((char*)&item.modification_time, 8);
+    f.read((char*)&item.permissions, 4);
+    f.read((char*)&item.uid, 4);
+    f.read((char*)&item.gid, 4);
+    if (f.gcount() < 24) throw std::runtime_error("Unexpected EOF while reading file properties.");
+    
     item.data_start_offset = f.tellg();
     current_offset = item.data_start_offset; // Update current offset for next header
     
@@ -92,6 +99,17 @@ std::vector<FileMetadata> read_solid_block_metadata(std::ifstream& f, uint64_t& 
         
         memcpy(&item.file_size, &metadata_buffer[buffer_pos], 8);
         buffer_pos += 8;
+
+        memcpy(&item.creation_time, &metadata_buffer[buffer_pos], 8);
+        buffer_pos += 8;
+        memcpy(&item.modification_time, &metadata_buffer[buffer_pos], 8);
+        buffer_pos += 8;
+        memcpy(&item.permissions, &metadata_buffer[buffer_pos], 4);
+        buffer_pos += 4;
+        memcpy(&item.uid, &metadata_buffer[buffer_pos], 4);
+        buffer_pos += 4;
+        memcpy(&item.gid, &metadata_buffer[buffer_pos], 4);
+        buffer_pos += 4;
         
         item.compression_type = block_comp_type;
         item.level = block_level;

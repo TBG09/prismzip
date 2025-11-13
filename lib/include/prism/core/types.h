@@ -54,6 +54,11 @@ struct FileMetadata {
     std::string file_hash;
     uint64_t file_size;
     uint64_t compressed_size;
+    uint64_t creation_time;     // Unix timestamp
+    uint64_t modification_time; // Unix timestamp
+    uint32_t permissions;       // File mode (e.g., 0755)
+    uint32_t uid;               // User ID
+    uint32_t gid;               // Group ID
 };
 
 extern const std::map<std::string, CompressionType> COMPRESSION_MAP;

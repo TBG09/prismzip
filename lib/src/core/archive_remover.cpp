@@ -62,7 +62,9 @@ void remove_from_archive(const std::string& archive_file, const std::vector<std:
         // Create and write new header
         std::vector<char> header = create_archive_header(item.path, item.compression_type, item.level,
                                                        item.hash_type, item.file_hash, item.file_size,
-                                                       item.compressed_size);
+                                                       item.compressed_size, item.creation_time,
+                                                       item.modification_time, item.permissions,
+                                                       item.uid, item.gid);
         temp_out.write(header.data(), header.size());
 
         // Copy data from original archive

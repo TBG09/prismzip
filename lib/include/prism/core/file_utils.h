@@ -22,6 +22,9 @@ bool match_pattern(const std::string& path, const std::string& pattern);
 bool should_exclude(const std::string& path, const std::vector<std::string>& exclude_patterns);
 bool should_compress(const std::string& file_path, CompressionType compression_type);
 
+bool get_file_properties(const std::string& path, FileMetadata& metadata);
+bool set_file_properties(const std::string& path, const FileMetadata& metadata);
+
 } // namespace core
 } // namespace prism
 

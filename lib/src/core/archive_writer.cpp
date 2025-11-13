@@ -5,170 +5,552 @@
 #include <prism/compression.h>
 #include <prism/hashing/openssl_hasher.h>
 #include <prism/core/ui_utils.h>
+#include <prism/core/thread_pool.h>
 #include <fstream>
 #include <iostream> // For progress bar
 #include <iomanip>
 #include <set>
 #include <filesystem>
 #include <sys/stat.h> // Required for stat struct
+#include <thread>
+#include <mutex>
+#include <atomic>
+#include <stdexcept>
+#include <algorithm>
+#include <cstring> // Required for memcpy
 
 namespace fs = std::filesystem;
 
 namespace prism {
 namespace core {
 
-std::vector<char> create_archive_header(const std::string& archive_path, CompressionType compression_type,
-                                   uint8_t level, HashType hash_type, const std::string& file_hash,
-                                   uint64_t file_size, uint64_t compressed_size) {
-    log("Creating header for '" + archive_path + "'...", LOG_VERBOSE);
+uint64_t estimate_archive_size(const std::string& archive_file, const std::vector<std::string>& paths,
+                             CompressionType comp_type,
+                             bool ignore_errors, const std::vector<std::string>& exclude_patterns, bool use_full_path);
+
+// Helper function for solid archive metadata
+
+inline std::vector<char> create_solid_file_metadata(const std::string& archive_path, HashType hash_type, const std::string& file_hash, uint64_t file_size) {
+
+    std::vector<char> metadata;
+
     
-    std::vector<char> header;
-    
+
     uint32_t path_len = archive_path.size();
-    header.insert(header.end(), (char*)&path_len, (char*)&path_len + 4);
-    header.insert(header.end(), archive_path.begin(), archive_path.end());
+
+    metadata.resize(metadata.size() + 4);
+
+    memcpy(&metadata[metadata.size() - 4], &path_len, 4);
+
+    metadata.insert(metadata.end(), archive_path.begin(), archive_path.end());
+
     
-    header.push_back(static_cast<uint8_t>(compression_type));
-    header.push_back(level);
-    header.push_back(static_cast<uint8_t>(hash_type));
+
+    metadata.push_back(static_cast<uint8_t>(hash_type));
+
     
+
     uint16_t hash_len = file_hash.size();
-    header.insert(header.end(), (char*)&hash_len, (char*)&hash_len + 2);
-    header.insert(header.end(), file_hash.begin(), file_hash.end());
+
+    metadata.resize(metadata.size() + 2);
+
+    memcpy(&metadata[metadata.size() - 2], &hash_len, 2);
+
+    metadata.insert(metadata.end(), file_hash.begin(), file_hash.end());
+
     
-    header.insert(header.end(), (char*)&file_size, (char*)&file_size + 8);
-    header.insert(header.end(), (char*)&compressed_size, (char*)&compressed_size + 8);
+
+    metadata.resize(metadata.size() + 8);
+
+    memcpy(&metadata[metadata.size() - 8], &file_size, 8);
+
     
-    log("Header creation complete.", LOG_VERBOSE);
-    return header;
+
+    return metadata;
+
 }
 
-void create_archive(const std::string& archive_file, const std::vector<std::string>& paths,
+
+
+ArchiveCreationResult create_archive(const std::string& archive_file, const std::vector<std::string>& paths,
+
                    CompressionType comp_type, int level, HashType hash_type, 
-                   bool ignore_errors, const std::vector<std::string>& exclude_patterns, bool use_full_path, bool auto_yes) {
-    // Disk space verification
+
+                   bool ignore_errors, const std::vector<std::string>& exclude_patterns, bool use_full_path, bool auto_yes, int num_threads, bool raw_output, bool use_basic_chars, bool solid_mode) {
+
+
+
+    // Disk space verification (common for both modes)
+
     uint64_t estimated_size = estimate_archive_size(archive_file, paths, comp_type, ignore_errors, exclude_patterns, use_full_path);
-    uint64_t free_space = get_free_disk_space(fs::path(archive_file).parent_path().string());
+
+    fs::path p = archive_file;
+
+    fs::path parent = p.parent_path();
+
+    std::string path_for_space_check = parent.empty() ? "." : parent.string();
+
+    uint64_t free_space = get_free_disk_space(path_for_space_check);
+
+
 
     if (estimated_size > free_space) {
+
         std::string message = "Warning: Estimated archive size (" + format_size(estimated_size) + ") exceeds available disk space (" + format_size(free_space) + ") on target drive. Continue anyway?";
+
         if (!confirm_action(message, auto_yes)) {
+
             throw std::runtime_error("Archive creation cancelled by user.");
+
         }
+
     }
 
-    std::ofstream out(archive_file, std::ios::binary);
-    if (!out) {
-        throw std::runtime_error("Cannot create archive file: " + archive_file);
-    }
-    
-    out.write("PRZM", 4);
-    uint16_t version = 1;
-    out.write((char*)&version, 2);
-    
-    log("Created archive file named '" + archive_file + "'", LOG_INFO);
-    
-    int total_files = 0;
-    uint64_t total_uncompressed = 0;
-    uint64_t total_compressed = 0;
-    
+
+
+    std::vector<std::string> all_files;
+
     for (const auto& path : paths) {
+
         if (!file_exists(path)) {
+
             if (ignore_errors) {
+
                 log("Warning: Path not found: '" + path + "' (ignored)", LOG_WARN);
+
                 continue;
+
             } else {
+
                 throw std::runtime_error("Path not found: " + path);
+
             }
-        }
-        
-        if (should_exclude(path, exclude_patterns)) {
-            continue;
+
         }
 
-        fs::path input_path_obj(path);
-        fs::path base_path = input_path_obj.parent_path();
-        if (base_path.empty()) {
-            base_path = ".";
-        }
-
-        std::vector<std::string> files;
         if (is_directory(path)) {
-            list_files_recursive(path, files, exclude_patterns);
+
+            list_files_recursive(path, all_files, exclude_patterns);
+
         } else {
-            files.push_back(path);
+
+            if (!should_exclude(path, exclude_patterns)) {
+
+                all_files.push_back(path);
+
+            }
+
         }
-        
-        for (size_t i = 0; i < files.size(); i++) {
-            show_progress_bar(i + 1, files.size());
-            
-            const std::string& file_path = files[i];
-            
-            std::string archive_path;
-            if (use_full_path) {
-                archive_path = get_absolute_path(file_path);
-            } else {
-                archive_path = fs::relative(file_path, base_path).string();
-            }
-            
-            CompressionType actual_comp = should_compress(file_path, comp_type) ? comp_type : CompressionType::NONE;
-            if (actual_comp != comp_type) {
-                log("Skipping compression for already compressed file '" + file_path + "'", LOG_VERBOSE);
-            }
-            
+
+    }
+
+
+
+    if (solid_mode) {
+
+        // --- SOLID MODE ---
+
+        log("Creating solid archive file named '" + archive_file + "'", LOG_INFO);
+
+
+
+        std::vector<char> all_uncompressed_data;
+
+        std::vector<char> metadata_block;
+
+        uint64_t total_uncompressed_size = 0;
+
+        int files_added = 0;
+
+
+
+        for (const auto& file_path : all_files) {
+
+            // Get relative path for archive
+
+            fs::path input_path_obj(file_path);
+
+            fs::path base_path = input_path_obj.parent_path();
+
+            if (base_path.empty()) { base_path = "."; }
+
+            std::string archive_path = use_full_path ? get_absolute_path(file_path) : fs::relative(file_path, base_path).string();
+
+
+
+            // Read file data
+
             std::ifstream file(file_path, std::ios::binary);
+
             if (!file) {
+
                 if (ignore_errors) {
+
                     log("Warning: Cannot open file: '" + file_path + "' (ignored)", LOG_WARN);
+
                     continue;
+
                 } else {
+
                     throw std::runtime_error("Cannot open file: " + file_path);
+
                 }
+
             }
-            
+
             std::vector<char> data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
             file.close();
-            
+
+
+
+            // Append data to the main block
+
+            all_uncompressed_data.insert(all_uncompressed_data.end(), data.begin(), data.end());
+
+            total_uncompressed_size += data.size();
+
+
+
+            // Calculate hash
+
             std::string hash = hashing::calculate_hash(file_path, hash_type);
-            std::vector<char> compressed = compression::compress_data(data, actual_comp, level);
+
+
+
+            // Create and append metadata
+
+            std::vector<char> file_metadata = create_solid_file_metadata(archive_path, hash_type, hash, data.size());
+
+            metadata_block.insert(metadata_block.end(), file_metadata.begin(), file_metadata.end());
+
             
-            std::vector<char> header = create_archive_header(archive_path, actual_comp, level, 
-                                                       hash_type, hash, data.size(), compressed.size());
-            
-            out.write(header.data(), header.size());
-            out.write(compressed.data(), compressed.size());
-            
-            total_files++;
-            total_uncompressed += data.size();
-            total_compressed += compressed.size();
-            
-            log("  - Added file '" + archive_path + "' (" + format_size(data.size()) + ")", LOG_INFO);
+
+            files_added++;
+
+            show_progress_bar(files_added, all_files.size(), archive_path, data.size(), raw_output, use_basic_chars);
+
         }
+
+        
+
+        if (files_added > 0 && !raw_output) std::cout << std::endl;
+
+
+
+        // Compress the entire data block
+
+        log("Compressing solid block...", LOG_INFO);
+
+        std::vector<char> compressed_data = compression::compress_data(all_uncompressed_data, comp_type, level);
+
+        log("Compression complete.", LOG_VERBOSE);
+
+
+
+        // Write to archive
+
+        std::ofstream out(archive_file, std::ios::binary);
+
+        if (!out) {
+
+            throw std::runtime_error("Cannot create archive file: " + archive_file);
+
+        }
+
+
+
+                out.write("PRZM", 4);
+
+
+
+                uint16_t version = 1;
+
+
+
+                out.write((char*)&version, 2);
+
+
+
+                uint8_t flags = SOLID_ARCHIVE_FLAG;
+
+
+
+                out.write((char*)&flags, 1);
+
+
+
+                out.write((char*)&comp_type, 1);
+
+
+
+                out.write((char*)&level, 1);
+
+
+
+                
+
+
+
+                uint64_t metadata_size = metadata_block.size();
+
+        out.write((char*)&metadata_size, 8);
+
+        out.write(metadata_block.data(), metadata_block.size());
+
+        out.write(compressed_data.data(), compressed_data.size());
+
+        
+
+        log("Successfully created solid archive '" + archive_file + "'", LOG_SUCCESS);
+
+        log("Items added: " + std::to_string(files_added) + " files", LOG_SUM);
+
+        log("Total uncompressed data: " + format_size(total_uncompressed_size), LOG_SUM);
+
+        log("Total compressed data: " + format_size(compressed_data.size()), LOG_SUM);
+
+        if (total_uncompressed_size > 0) {
+
+            double ratio = 100.0 * (1.0 - (double)compressed_data.size() / total_uncompressed_size);
+
+            log("Compression ratio: " + std::to_string((int)ratio) + "%", LOG_SUM);
+
+        }
+
+
+
+        return { (long)files_added, total_uncompressed_size, compressed_data.size(), {} };
+
+
+
+    } else {
+
+        // --- NON-SOLID MODE (existing logic) ---
+
+        std::ofstream out(archive_file, std::ios::binary);
+
+        if (!out) {
+
+            throw std::runtime_error("Cannot create archive file: " + archive_file);
+
+        }
+
+        
+
+        out.write("PRZM", 4);
+
+        uint16_t version = 1;
+
+        out.write((char*)&version, 2);
+
+        uint8_t flags = 0; // No flags
+
+        out.write((char*)&flags, 1);
+
+        
+
+        log("Created archive file named '" + archive_file + "' using " + std::to_string(num_threads) + " threads.", LOG_INFO);
+
+        
+
+        std::atomic<int> total_files = 0;
+
+        std::atomic<uint64_t> total_uncompressed = 0;
+
+        std::atomic<uint64_t> total_compressed = 0;
+
+        std::atomic<int> progress_counter = 0;
+
+
+
+        std::mutex out_mutex;
+
+        std::mutex cout_mutex;
+
+        std::vector<long long> durations_ms;
+
+
+
+        {
+
+            ThreadPool pool(num_threads);
+
+            std::vector<std::future<void>> results;
+
+
+
+            for (const auto& file_path : all_files) {
+
+                results.emplace_back(pool.enqueue([&, file_path] {
+
+                    fs::path input_path_obj(file_path);
+
+                    fs::path base_path = input_path_obj.parent_path();
+
+                    if (base_path.empty()) {
+
+                        base_path = ".";
+
+                    }
+
+
+
+                    std::string archive_path;
+
+                    if (use_full_path) {
+
+                        archive_path = get_absolute_path(file_path);
+
+                    } else {
+
+                        archive_path = fs::relative(file_path, base_path).string();
+
+                    }
+
+                    
+
+                    CompressionType actual_comp = should_compress(file_path, comp_type) ? comp_type : CompressionType::NONE;
+
+                    if (actual_comp != comp_type) {
+
+                        std::lock_guard<std::mutex> lock(cout_mutex);
+
+                        log("Skipping compression for already compressed file '" + file_path + "'", LOG_VERBOSE);
+
+                    }
+
+                    
+
+                    std::ifstream file(file_path, std::ios::binary);
+
+                    if (!file) {
+
+                        if (ignore_errors) {
+
+                            std::lock_guard<std::mutex> lock(cout_mutex);
+
+                            log("Warning: Cannot open file: '" + file_path + "' (ignored)", LOG_WARN);
+
+                            return;
+
+                        } else {
+
+                            throw std::runtime_error("Cannot open file: " + file_path);
+
+                        }
+
+                    }
+
+                    
+
+                    std::vector<char> data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
+                    file.close();
+
+                    
+
+                    std::string hash = hashing::calculate_hash(file_path, hash_type);
+
+                    std::vector<char> compressed = compression::compress_data(data, actual_comp, level);
+
+                    
+
+                    std::vector<char> header = create_archive_header(archive_path, actual_comp, level, 
+
+                                                               hash_type, hash, data.size(), compressed.size());
+
+                    
+
+                    {
+
+                        std::lock_guard<std::mutex> lock(out_mutex);
+
+                        out.write(header.data(), header.size());
+
+                        out.write(compressed.data(), compressed.size());
+
+                    }
+
+                    
+
+                    total_files++;
+
+                    total_uncompressed += data.size();
+
+                    total_compressed += compressed.size();
+
+                    
+
+                    {
+
+                        std::lock_guard<std::mutex> lock(cout_mutex);
+
+                        show_progress_bar(++progress_counter, all_files.size(), archive_path, data.size(), raw_output, use_basic_chars);
+
+                    }
+
+                }));
+
+            }
+
+
+
+            for(auto && result : results)
+
+                result.get();
+
+            
+
+            durations_ms = pool.get_thread_durations();
+
+        }
+
+        
+
+        if (total_files > 0 && !raw_output) std::cout << std::endl;
+
+        
+
+        log("Successfully created archive '" + archive_file + "'", LOG_SUCCESS);
+
+        log("Items added: " + std::to_string(total_files.load()) + " files", LOG_SUM);
+
+        log("Total uncompressed data: " + format_size(total_uncompressed.load()), LOG_SUM);
+
+        log("Total compressed data: " + format_size(total_compressed.load()), LOG_SUM);
+
+        
+
+        if (total_uncompressed > 0) {
+
+            double ratio = 100.0 * (1.0 - (double)total_compressed.load() / total_uncompressed.load());
+
+            log("Compression ratio: " + std::to_string((int)ratio) + "%", LOG_SUM);
+
+        }
+
+        
+
+        return {total_files.load(), total_uncompressed.load(), total_compressed.load(), durations_ms};
+
     }
-    
-    if (total_files > 0) std::cout << std::endl;
-    
-    log("Successfully created archive '" + archive_file + "'", LOG_SUCCESS);
-    log("Items added: " + std::to_string(total_files) + " files", LOG_SUM);
-    log("Total uncompressed data: " + format_size(total_uncompressed), LOG_SUM);
-    log("Total compressed data: " + format_size(total_compressed), LOG_SUM);
-    
-    if (total_uncompressed > 0) {
-        double ratio = 100.0 * (1.0 - (double)total_compressed / total_uncompressed);
-        log("Compression ratio: " + std::to_string((int)ratio) + "%", LOG_SUM);
-    }
+
 }
 
-void append_to_archive(const std::string& archive_file, const std::vector<std::string>& paths,
+ArchiveCreationResult append_to_archive(const std::string& archive_file, const std::vector<std::string>& paths,
                       CompressionType comp_type, int level, HashType hash_type, 
-                      bool ignore_errors, const std::vector<std::string>& exclude_patterns, bool use_full_path, bool auto_yes) {
+                      bool ignore_errors, const std::vector<std::string>& exclude_patterns, bool use_full_path, bool auto_yes, int num_threads, bool raw_output, bool use_basic_chars, bool solid_mode) {
     if (!file_exists(archive_file)) {
         throw std::runtime_error("Archive file not found: " + archive_file);
     }
     
     // Disk space verification
     uint64_t estimated_size = estimate_archive_size(archive_file, paths, comp_type, ignore_errors, exclude_patterns, use_full_path);
-    uint64_t free_space = get_free_disk_space(fs::path(archive_file).parent_path().string());
+    fs::path p = archive_file;
+    fs::path parent = p.parent_path();
+    std::string path_for_space_check = parent.empty() ? "." : parent.string();
+    uint64_t free_space = get_free_disk_space(path_for_space_check);
 
     if (estimated_size > free_space) {
         std::string message = "Warning: Estimated archive size (" + format_size(estimated_size) + ") exceeds available disk space (" + format_size(free_space) + ") on target drive. Continue anyway?";
@@ -177,25 +559,7 @@ void append_to_archive(const std::string& archive_file, const std::vector<std::s
         }
     }
 
-    std::vector<FileMetadata> existing_items = read_archive_metadata(archive_file);
-    std::set<std::string> existing_paths;
-    for (const auto& item : existing_items) {
-        existing_paths.insert(item.path);
-    }
-    
-    std::ofstream out(archive_file, std::ios::binary | std::ios::app);
-    if (!out) {
-        throw std::runtime_error("Cannot open archive file for appending: " + archive_file);
-    }
-    
-    log("Appending to existing archive: '" + archive_file + "'", LOG_INFO);
-    
-    // ... (rest of the function is identical to create_archive, should be refactored)
-    // For now, just copy-paste and adapt
-    int total_files = 0;
-    uint64_t total_uncompressed = 0;
-    uint64_t total_compressed = 0;
-    
+    std::vector<std::string> all_files;
     for (const auto& path : paths) {
         if (!file_exists(path)) {
             if (ignore_errors) {
@@ -205,35 +569,39 @@ void append_to_archive(const std::string& archive_file, const std::vector<std::s
                 throw std::runtime_error("Path not found: " + path);
             }
         }
-        
-        if (should_exclude(path, exclude_patterns)) {
-            continue;
-        }
-
-        fs::path input_path_obj(path);
-        fs::path base_path = input_path_obj.parent_path();
-        if (base_path.empty()) {
-            base_path = ".";
-        }
-
-        std::vector<std::string> files;
         if (is_directory(path)) {
-            list_files_recursive(path, files, exclude_patterns);
+            list_files_recursive(path, all_files, exclude_patterns);
         } else {
-            files.push_back(path);
-        }
-        
-        for (size_t i = 0; i < files.size(); i++) {
-            show_progress_bar(i + 1, files.size());
-            
-            const std::string& file_path = files[i];
-            std::string archive_path;
-            if (use_full_path) {
-                archive_path = get_absolute_path(file_path);
-            } else {
-                archive_path = fs::relative(file_path, base_path).string();
+            if (!should_exclude(path, exclude_patterns)) {
+                all_files.push_back(path);
             }
-            
+        }
+    }
+
+    if (solid_mode) {
+        if (is_solid_archive(archive_file)) {
+            log("Warning: This will add another block to the end of the archive, this will make it no longer a solid block archive", LOG_WARN);
+        }
+
+        std::vector<FileMetadata> existing_items = read_archive_metadata(archive_file);
+        std::set<std::string> existing_paths;
+        for (const auto& item : existing_items) {
+            existing_paths.insert(item.path);
+        }
+
+        log("Appending to archive '" + archive_file + "' in solid mode.", LOG_INFO);
+
+        std::vector<char> all_uncompressed_data;
+        std::vector<char> metadata_block;
+        uint64_t total_uncompressed_size = 0;
+        int files_added = 0;
+
+        for (const auto& file_path : all_files) {
+            fs::path input_path_obj(file_path);
+            fs::path base_path = input_path_obj.parent_path();
+            if (base_path.empty()) { base_path = "."; }
+            std::string archive_path = use_full_path ? get_absolute_path(file_path) : fs::relative(file_path, base_path).string();
+
             if (existing_paths.count(archive_path)) {
                 if (ignore_errors) {
                     log("Warning: File already exists in archive: '" + archive_path + "' (ignored)", LOG_WARN);
@@ -242,9 +610,7 @@ void append_to_archive(const std::string& archive_file, const std::vector<std::s
                     throw std::runtime_error("File already exists in archive: " + archive_path);
                 }
             }
-            
-            CompressionType actual_comp = should_compress(file_path, comp_type) ? comp_type : CompressionType::NONE;
-            
+
             std::ifstream file(file_path, std::ios::binary);
             if (!file) {
                 if (ignore_errors) {
@@ -254,33 +620,158 @@ void append_to_archive(const std::string& archive_file, const std::vector<std::s
                     throw std::runtime_error("Cannot open file: " + file_path);
                 }
             }
-            
             std::vector<char> data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
             file.close();
-            
+
+            all_uncompressed_data.insert(all_uncompressed_data.end(), data.begin(), data.end());
+            total_uncompressed_size += data.size();
+
             std::string hash = hashing::calculate_hash(file_path, hash_type);
-            std::vector<char> compressed = compression::compress_data(data, actual_comp, level);
+            std::vector<char> file_metadata = create_solid_file_metadata(archive_path, hash_type, hash, data.size());
+            metadata_block.insert(metadata_block.end(), file_metadata.begin(), file_metadata.end());
             
-            std::vector<char> header = create_archive_header(archive_path, actual_comp, level, 
-                                                       hash_type, hash, data.size(), compressed.size());
-            
-            out.write(header.data(), header.size());
-            out.write(compressed.data(), compressed.size());
-            
-            total_files++;
-            total_uncompressed += data.size();
-            total_compressed += compressed.size();
-            
-            log("  - Added file '" + archive_path + "' (" + format_size(data.size()) + ")", LOG_INFO);
+            files_added++;
+            show_progress_bar(files_added, all_files.size(), archive_path, data.size(), raw_output, use_basic_chars);
         }
+
+        if (files_added > 0 && !raw_output) std::cout << std::endl;
+
+        if (files_added == 0) {
+            log("No new files to append.", LOG_INFO);
+            return {0, 0, 0, {}};
+        }
+
+        log("Compressing solid block for appending...", LOG_INFO);
+        std::vector<char> compressed_data = compression::compress_data(all_uncompressed_data, comp_type, level);
+        log("Compression complete.", LOG_VERBOSE);
+
+        std::ofstream out(archive_file, std::ios::binary | std::ios::app);
+        if (!out) {
+            throw std::runtime_error("Cannot open archive file for appending: " + archive_file);
+        }
+
+        out.write(SOLID_BLOCK_MAGIC, 4);
+        out.write((char*)&comp_type, 1);
+        out.write((char*)&level, 1);
+        uint64_t metadata_size = metadata_block.size();
+        out.write((char*)&metadata_size, 8);
+        out.write(metadata_block.data(), metadata_block.size());
+        out.write(compressed_data.data(), compressed_data.size());
+
+        log("Successfully appended solid block to archive '" + archive_file + "'", LOG_SUCCESS);
+        log("Items added: " + std::to_string(files_added) + " files", LOG_SUM);
+        log("Total uncompressed data: " + format_size(total_uncompressed_size), LOG_SUM);
+        log("Total compressed data: " + format_size(compressed_data.size()), LOG_SUM);
+
+        return {(long)files_added, total_uncompressed_size, compressed_data.size(), {}};
+
+    } else {
+        // --- NON-SOLID APPEND ---
+        std::vector<FileMetadata> existing_items = read_archive_metadata(archive_file);
+        std::set<std::string> existing_paths;
+        for (const auto& item : existing_items) {
+            existing_paths.insert(item.path);
+        }
+        
+        std::ofstream out(archive_file, std::ios::binary | std::ios::app);
+        if (!out) {
+            throw std::runtime_error("Cannot open archive file for appending: " + archive_file);
+        }
+        
+        log("Appending to existing archive: '" + archive_file + "' using " + std::to_string(num_threads) + " threads.", LOG_INFO);
+        
+        std::atomic<int> total_files = 0;
+        std::atomic<uint64_t> total_uncompressed = 0;
+        std::atomic<uint64_t> total_compressed = 0;
+        std::atomic<int> progress_counter = 0;
+
+        std::mutex out_mutex;
+        std::mutex cout_mutex;
+        std::vector<long long> durations_ms;
+
+        {
+            ThreadPool pool(num_threads);
+            std::vector<std::future<void>> results;
+
+            for (const auto& file_path : all_files) {
+                results.emplace_back(pool.enqueue([&, file_path] {
+                    fs::path input_path_obj(file_path);
+                    fs::path base_path = input_path_obj.parent_path();
+                    if (base_path.empty()) {
+                        base_path = ".";
+                    }
+
+                    std::string archive_path;
+                    if (use_full_path) {
+                        archive_path = get_absolute_path(file_path);
+                    } else {
+                        archive_path = fs::relative(file_path, base_path).string();
+                    }
+
+                    if (existing_paths.count(archive_path)) {
+                        if (ignore_errors) {
+                            std::lock_guard<std::mutex> lock(cout_mutex);
+                            log("Warning: File already exists in archive: '" + archive_path + "' (ignored)", LOG_WARN);
+                            return;
+                        } else {
+                            throw std::runtime_error("File already exists in archive: " + archive_path);
+                        }
+                    }
+                    
+                    CompressionType actual_comp = should_compress(file_path, comp_type) ? comp_type : CompressionType::NONE;
+                    
+                    std::ifstream file(file_path, std::ios::binary);
+                    if (!file) {
+                        if (ignore_errors) {
+                            std::lock_guard<std::mutex> lock(cout_mutex);
+                            log("Warning: Cannot open file: '" + file_path + "' (ignored)", LOG_WARN);
+                            return;
+                        } else {
+                            throw std::runtime_error("Cannot open file: " + file_path);
+                        }
+                    }
+                    
+                    std::vector<char> data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+                    file.close();
+                    
+                    std::string hash = hashing::calculate_hash(file_path, hash_type);
+                    std::vector<char> compressed = compression::compress_data(data, actual_comp, level);
+                    
+                    std::vector<char> header = create_archive_header(archive_path, actual_comp, level, 
+                                                               hash_type, hash, data.size(), compressed.size());
+                    
+                    {
+                        std::lock_guard<std::mutex> lock(out_mutex);
+                        out.write(header.data(), header.size());
+                        out.write(compressed.data(), compressed.size());
+                    }
+                    
+                    total_files++;
+                    total_uncompressed += data.size();
+                    total_compressed += compressed.size();
+                    
+                    {
+                        std::lock_guard<std::mutex> lock(cout_mutex);
+                        show_progress_bar(++progress_counter, all_files.size(), archive_path, data.size(), raw_output, use_basic_chars);
+                    }
+                }));
+            }
+
+            for(auto && result : results)
+                result.get();
+            
+            durations_ms = pool.get_thread_durations();
+        }
+        
+        if (total_files > 0 && !raw_output) std::cout << std::endl;
+        
+        log("Successfully appended to archive '" + archive_file + "'", LOG_SUCCESS);
+        log("Items added: " + std::to_string(total_files.load()) + " files", LOG_SUM);
+        log("Total uncompressed data: " + format_size(total_uncompressed.load()), LOG_SUM);
+        log("Total compressed data: " + format_size(total_compressed.load()), LOG_SUM);
+
+        return {total_files.load(), total_uncompressed.load(), total_compressed.load(), durations_ms};
     }
-    
-    if (total_files > 0) std::cout << std::endl;
-    
-    log("Successfully appended to archive '" + archive_file + "'", LOG_SUCCESS);
-    log("Items added: " + std::to_string(total_files) + " files", LOG_SUM);
-    log("Total uncompressed data: " + format_size(total_uncompressed), LOG_SUM);
-    log("Total compressed data: " + format_size(total_compressed), LOG_SUM);
 }
 
 uint64_t estimate_archive_size(const std::string& archive_file, const std::vector<std::string>& paths,

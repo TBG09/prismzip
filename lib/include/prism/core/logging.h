@@ -15,6 +15,7 @@ enum LogLevel {
     LOG_WARN,
     LOG_ERROR,
     LOG_VERBOSE,
+    LOG_DEBUG, // New debug level
     LOG_SUCCESS
 };
 

@@ -1,108 +1,91 @@
 #include <prism/core/archive_remover.h>
 #include <prism/core/archive_reader.h>
+#include <prism/core/archive_writer.h>
 #include <prism/core/file_utils.h>
 #include <prism/core/logging.h>
 #include <prism/core/ui_utils.h>
-#include <set>
 #include <fstream>
-#include <iostream> // For progress bar
+#include <iostream>
+#include <set>
+#include <cstdio> // For std::rename
+#include <stdexcept>
 
 namespace prism {
 namespace core {
 
-void remove_from_archive(const std::string& archive_file, const std::vector<std::string>& paths_to_remove, bool ignore_errors) {
+void remove_from_archive(const std::string& archive_file, const std::vector<std::string>& files_to_remove, bool ignore_errors, bool raw_output, bool use_basic_chars) {
     if (!file_exists(archive_file)) {
         throw std::runtime_error("Archive file not found: " + archive_file);
     }
-    
+
     std::vector<FileMetadata> all_items = read_archive_metadata(archive_file);
     std::vector<FileMetadata> items_to_keep;
-    
-    std::set<std::string> remove_set(paths_to_remove.begin(), paths_to_remove.end());
-    
-    int total_removed = 0;
-    uint64_t bytes_removed = 0;
-    
-    log("Removing from archive: '" + archive_file + "'", LOG_INFO);
-    
+    std::set<std::string> remove_set(files_to_remove.begin(), files_to_remove.end());
+
     for (const auto& item : all_items) {
-        bool should_remove = false;
-        
-        if (remove_set.count(item.path)) {
-            should_remove = true;
-        } else {
-            for (const auto& remove_path : paths_to_remove) {
-                if (item.path.rfind(remove_path, 0) == 0) {
-                    should_remove = true;
-                    break;
-                }
-            }
-        }
-        
-        if (should_remove) {
-            total_removed++;
-            bytes_removed += item.file_size;
-            log("  - Removing: '" + item.path + "'", LOG_INFO);
-        } else {
+        if (remove_set.find(item.path) == remove_set.end()) {
             items_to_keep.push_back(item);
-        }
-    }
-    
-    if (total_removed == 0) {
-        if (ignore_errors) {
-            log("Warning: No matching paths found to remove", LOG_WARN);
-            return;
         } else {
-            throw std::runtime_error("No matching paths found to remove");
+            log("Marked for removal: '" + item.path + "'", LOG_INFO);
         }
     }
-    
-    std::string temp_file = archive_file + ".tmp";
-    std::ofstream out(temp_file, std::ios::binary);
-    if (!out) {
-        throw std::runtime_error("Cannot create temporary file");
+
+    if (items_to_keep.size() == all_items.size()) {
+        log("No matching files found in archive to remove.", LOG_WARN);
+        if (!ignore_errors && !files_to_remove.empty()) {
+             throw std::runtime_error("No files matched for removal.");
+        }
+        return;
     }
-    
-    std::ifstream in(archive_file, std::ios::binary);
-    if (!in) {
-        throw std::runtime_error("Cannot read archive file");
+
+    std::string temp_archive_file = archive_file + ".tmp";
+    std::ofstream temp_out(temp_archive_file, std::ios::binary);
+    if (!temp_out) {
+        throw std::runtime_error("Could not create temporary archive file.");
     }
-    
-    out.write("PRZM", 4);
+
+    // Write header to temp file
+    temp_out.write("PRZM", 4);
     uint16_t version = 1;
-    out.write((char*)&version, 2);
-    
-    for (size_t i = 0; i < items_to_keep.size(); i++) {
-        show_progress_bar(i + 1, items_to_keep.size());
-        
+    temp_out.write((char*)&version, 2);
+
+    log("Rebuilding archive...", LOG_INFO);
+
+    std::ifstream original_in(archive_file, std::ios::binary);
+    if (!original_in) {
+        throw std::runtime_error("Could not open original archive for reading.");
+    }
+
+    for (size_t i = 0; i < items_to_keep.size(); ++i) {
         const auto& item = items_to_keep[i];
         
-        in.seekg(item.header_start_offset);
+        // Create and write new header
+        std::vector<char> header = create_archive_header(item.path, item.compression_type, item.level,
+                                                       item.hash_type, item.file_hash, item.file_size,
+                                                       item.compressed_size);
+        temp_out.write(header.data(), header.size());
+
+        // Copy data from original archive
+        original_in.seekg(item.data_start_offset);
+        std::vector<char> buffer(item.compressed_size);
+        original_in.read(buffer.data(), item.compressed_size);
+        temp_out.write(buffer.data(), buffer.size());
         
-        size_t header_size = item.data_start_offset - item.header_start_offset;
-        size_t total_size = header_size + item.compressed_size;
-        
-        std::vector<char> data(total_size);
-        in.read(data.data(), total_size);
-        out.write(data.data(), total_size);
+        show_progress_bar(i + 1, items_to_keep.size(), item.path, item.file_size, raw_output, use_basic_chars);
     }
-    
-    if (items_to_keep.size() > 0) std::cout << std::endl;
-    
-    in.close();
-    out.close();
-    
-    if (remove(archive_file.c_str()) != 0) {
-        throw std::runtime_error("Cannot remove original archive file");
+    if (!items_to_keep.empty() && !raw_output) {
+        std::cout << std::endl;
     }
-    
-    if (rename(temp_file.c_str(), archive_file.c_str()) != 0) {
-        throw std::runtime_error("Cannot rename temporary file");
+
+    original_in.close();
+    temp_out.close();
+
+    // Replace original with temp
+    if (std::rename(temp_archive_file.c_str(), archive_file.c_str()) != 0) {
+        throw std::runtime_error("Failed to replace original archive with rebuilt one.");
     }
-    
-    log("Successfully removed items from archive '" + archive_file + "'", LOG_SUCCESS);
-    log("Items removed: " + std::to_string(total_removed), LOG_SUM);
-    log("Bytes freed: " + format_size(bytes_removed), LOG_SUM);
+
+    log("Successfully removed " + std::to_string(all_items.size() - items_to_keep.size()) + " file(s).", LOG_SUCCESS);
 }
 
 } // namespace core

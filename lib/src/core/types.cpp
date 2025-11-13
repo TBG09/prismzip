@@ -46,5 +46,7 @@ const std::set<std::string> COMPRESSED_EXTENSIONS = {
     ".gz", ".bz2", ".xz", ".lz4", ".zst"
 };
 
+const char* SOLID_BLOCK_MAGIC = "SLDB";
+
 } // namespace core
 } // namespace prism

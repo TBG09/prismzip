@@ -6,9 +6,12 @@
 #include <prism/core/archive_writer.h>
 #include <prism/core/archive_remover.h>
 #include <prism/core/archive_verifier.h>
+#include <prism/core/result_types.h>
+#include <prism/core/file_utils.h>
 #include <iostream>
 #include <chrono>
 #include <stdexcept>
+#include <any>
 
 namespace prism {
 namespace cli {
@@ -20,6 +23,9 @@ bool is_verb_en = false;
 bool is_warn_en = true;
 bool is_err_en = true;
 bool color_en = true;
+bool is_extra_info_en = false;
+bool is_raw_output_en = false;
+bool use_basic_chars = false;
 
 // ANSI color codes
 const std::string COLOR_RESET = "\033[0m";
@@ -72,19 +78,36 @@ void success(const std::string& msg) {
     }
 }
 
+void print_raw_summary(const std::string& msg);
+
 void cli_log_handler(const std::string& msg, int level) {
-    switch(static_cast<core::LogLevel>(level)) {
-        case core::LOG_INFO:    output(msg); break;
-        case core::LOG_SUM:     sumar(msg); break;
-        case core::LOG_WARN:    warn(msg); break;
-        case core::LOG_ERROR:   err(msg); break;
-        case core::LOG_VERBOSE: verb(msg); break;
-        case core::LOG_SUCCESS: success(msg); break;
+    if (is_raw_output_en) {
+        switch(static_cast<core::LogLevel>(level)) {
+            case core::LOG_INFO:    /* Suppress */ break;
+            case core::LOG_SUM:     print_raw_summary(msg); break;
+            case core::LOG_WARN:    std::cerr << msg << std::endl; break;
+            case core::LOG_ERROR:   std::cerr << msg << std::endl; break;
+            case core::LOG_VERBOSE: /* Suppress */ break;
+            case core::LOG_DEBUG:   /* Suppress */ break; // Suppress debug in raw output
+            case core::LOG_SUCCESS: /* Suppress */ break;
+        }
+    } else {
+        switch(static_cast<core::LogLevel>(level)) {
+            case core::LOG_INFO:    output(msg); break;
+            case core::LOG_SUM:     sumar(msg); break;
+            case core::LOG_WARN:    warn(msg); break;
+            case core::LOG_ERROR:   err(msg); break;
+            case core::LOG_VERBOSE: verb(msg); break;
+            case core::LOG_DEBUG:   if (is_verb_en) verb(msg); break; // Print debug messages if verbose is enabled
+            case core::LOG_SUCCESS: success(msg); break;
+        }
     }
 }
 
 void print_usage();
 void print_command_help(const std::string& command);
+void print_extra_info(const std::string& command, int num_threads, core::CompressionType comp_type, int comp_level, core::HashType hash_type, const std::any& result);
+
 
 int run_cli(int argc, char* argv[]) {
     core::set_log_handler(cli_log_handler);
@@ -121,6 +144,8 @@ int run_cli(int argc, char* argv[]) {
     bool auto_yes = false;
     bool no_overwrite = false;
     bool no_verify = false;
+    int num_threads = 1;
+    bool solid_mode = false;
     
     for (int i = 3; i < argc; i++) {
         std::string arg = argv[i];
@@ -137,10 +162,24 @@ int run_cli(int argc, char* argv[]) {
             no_overwrite = true;
         } else if (arg == "--no-color") {
             color_en = false;
+        } else if (arg == "--extra") {
+            is_extra_info_en = true;
+        } else if (arg == "--raw") {
+            is_raw_output_en = true;
+        } else if (arg == "--basic-chars") {
+            use_basic_chars = true;
+        } else if (arg == "-s" || arg == "--solid") {
+            solid_mode = true;
         } else if (arg == "--full") {
             use_full_path = true;
         } else if (arg == "--exclude" && i + 1 < argc) {
             exclude_patterns.push_back(argv[++i]);
+        } else if (arg == "--threads" && i + 1 < argc) {
+            num_threads = std::atoi(argv[++i]);
+            if (num_threads < 1) {
+                err("Error: Number of threads must be at least 1");
+                return 1;
+            }
         } else if (arg == "-c" && i + 1 < argc) {
             std::string comp_str = argv[++i];
             if (core::COMPRESSION_MAP.count(comp_str)) {
@@ -174,22 +213,24 @@ int run_cli(int argc, char* argv[]) {
         }
     }
     
+    std::any result;
+
     try {
         if (command == "create") {
             if (paths.empty()) { print_command_help("create"); return 1; }
-            core::create_archive(archive_file, paths, comp_type, comp_level, hash_type, ignore_errors, exclude_patterns, use_full_path, auto_yes);
+            result = core::create_archive(archive_file, paths, comp_type, comp_level, hash_type, ignore_errors, exclude_patterns, use_full_path, auto_yes, num_threads, is_raw_output_en, use_basic_chars, solid_mode);
         } else if (command == "append") {
             if (paths.empty()) { print_command_help("append"); return 1; }
-            core::append_to_archive(archive_file, paths, comp_type, comp_level, hash_type, ignore_errors, exclude_patterns, use_full_path, auto_yes);
+            result = core::append_to_archive(archive_file, paths, comp_type, comp_level, hash_type, ignore_errors, exclude_patterns, use_full_path, auto_yes, num_threads, is_raw_output_en, use_basic_chars, solid_mode);
         } else if (command == "list") {
             core::list_archive(archive_file, false); // false for not-raw
         } else if (command == "extract") {
-            core::extract_archive(archive_file, output_dir, paths, no_overwrite, no_verify);
+            result = core::extract_archive(archive_file, output_dir, paths, no_overwrite, no_verify, num_threads, is_raw_output_en, use_basic_chars);
         } else if (command == "remove") {
             if (paths.empty()) { print_command_help("remove"); return 1; }
-            core::remove_from_archive(archive_file, paths, ignore_errors);
+            core::remove_from_archive(archive_file, paths, ignore_errors, is_raw_output_en, use_basic_chars);
         } else if (command == "verify") {
-            core::verify_archive(archive_file);
+            core::verify_archive(archive_file, is_raw_output_en, use_basic_chars);
         } else {
             err("Error: Unknown command '" + command + "'");
             print_usage();
@@ -204,6 +245,11 @@ int run_cli(int argc, char* argv[]) {
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
     
     std::cout << std::endl;
+
+    if (is_extra_info_en) {
+        print_extra_info(command, num_threads, comp_type, comp_level, hash_type, result);
+    }
+
     sumar("Total time elapsed: " + std::to_string(duration.count() / 1000) + "." + 
           std::to_string(duration.count() % 1000) + "s");
     
@@ -211,6 +257,123 @@ int run_cli(int argc, char* argv[]) {
 }
 
 // ... (print_usage and print_command_help functions go here) ...
+
+#include <any>
+#include <prism/core/file_utils.h>
+
+// ... (rest of the file)
+
+void print_extra_info(const std::string& command, int num_threads, core::CompressionType comp_type, int comp_level, core::HashType hash_type, const std::any& result) {
+    if (is_raw_output_en) {
+        std::cout << "threads_used=" << num_threads << std::endl;
+        if (command == "create" || command == "append") {
+            auto create_result = std::any_cast<core::ArchiveCreationResult>(result);
+            std::cout << "compression_type=" << core::COMPRESSION_NAMES.at(comp_type) << std::endl;
+            std::cout << "compression_level=" << comp_level << std::endl;
+            std::cout << "hash_type=" << core::HASH_NAMES.at(hash_type) << std::endl;
+            std::cout << "files_added=" << create_result.files_added << std::endl;
+            std::cout << "uncompressed_size_bytes=" << create_result.total_uncompressed_size << std::endl;
+            std::cout << "compressed_size_bytes=" << create_result.total_compressed_size << std::endl;
+            if (create_result.total_uncompressed_size > 0) {
+                double ratio = 100.0 * (1.0 - (double)create_result.total_compressed_size / create_result.total_uncompressed_size);
+                std::cout << "compression_ratio_percent=" << (int)ratio << std::endl;
+            }
+            for (size_t i = 0; i < create_result.thread_durations_ms.size(); ++i) {
+                std::cout << "thread_" << i + 1 << "_duration_ms=" << create_result.thread_durations_ms[i] << std::endl;
+            }
+        } else if (command == "extract") {
+            auto extract_result = std::any_cast<core::ArchiveExtractionResult>(result);
+            std::cout << "files_extracted=" << extract_result.files_extracted << std::endl;
+            std::cout << "files_skipped=" << extract_result.files_skipped << std::endl;
+            std::cout << "bytes_extracted=" << extract_result.bytes_extracted << std::endl;
+            std::cout << "hashes_checked=" << extract_result.hashes_checked << std::endl;
+            std::cout << "hash_mismatches=" << extract_result.hash_mismatches << std::endl;
+            for (size_t i = 0; i < extract_result.thread_durations_ms.size(); ++i) {
+                std::cout << "thread_" << i + 1 << "_duration_ms=" << extract_result.thread_durations_ms[i] << std::endl;
+            }
+        }
+    } else {
+        sumar("Extra Information:");
+        sumar("  Operation Details:");
+        sumar("    - Threads: " + std::to_string(num_threads));
+
+        if (command == "create" || command == "append") {
+            auto create_result = std::any_cast<core::ArchiveCreationResult>(result);
+            sumar("    - Compression: " + core::COMPRESSION_NAMES.at(comp_type) + " (Level " + std::to_string(comp_level) + ")");
+            sumar("    - Hashing: " + core::HASH_NAMES.at(hash_type));
+            sumar("  Archive Statistics:");
+            sumar("    - Files Added: " + std::to_string(create_result.files_added));
+            sumar("    - Uncompressed Size: " + core::format_size(create_result.total_uncompressed_size));
+            sumar("    - Compressed Size: " + core::format_size(create_result.total_compressed_size));
+            if (create_result.total_uncompressed_size > 0) {
+                double ratio = 100.0 * (1.0 - (double)create_result.total_compressed_size / create_result.total_uncompressed_size);
+                sumar("    - Ratio: " + std::to_string((int)ratio) + "%");
+            }
+            sumar("  Thread Durations:");
+            for (size_t i = 0; i < create_result.thread_durations_ms.size(); ++i) {
+                sumar("    - Thread " + std::to_string(i + 1) + ": " + std::to_string(create_result.thread_durations_ms[i]) + " ms");
+            }
+        } else if (command == "extract") {
+            auto extract_result = std::any_cast<core::ArchiveExtractionResult>(result);
+            sumar("  Extraction Statistics:");
+            sumar("    - Files Extracted: " + std::to_string(extract_result.files_extracted));
+            sumar("    - Files Skipped: " + std::to_string(extract_result.files_skipped));
+            sumar("    - Total Data Extracted: " + core::format_size(extract_result.bytes_extracted));
+            sumar("  Integrity Check:");
+            sumar("    - Hashes Checked: " + std::to_string(extract_result.hashes_checked));
+            sumar("    - Hash Mismatches: " + std::to_string(extract_result.hash_mismatches));
+            sumar("  Thread Durations:");
+            for (size_t i = 0; i < extract_result.thread_durations_ms.size(); ++i) {
+                sumar("    - Thread " + std::to_string(i + 1) + ": " + std::to_string(extract_result.thread_durations_ms[i]) + " ms");
+            }
+        }
+    }
+}
+
+void print_raw_summary(const std::string& msg) {
+    // This parsing is fragile and depends on the exact format of log messages.
+    // A more robust solution would involve passing structured data from the core library.
+
+    if (msg.rfind("Items added: ", 0) == 0) { // Starts with "Items added: "
+        size_t start = msg.find(":") + 2;
+        size_t end = msg.find(" files");
+        std::cout << "items_added=" << msg.substr(start, end - start) << std::endl;
+    } else if (msg.rfind("Total uncompressed data: ", 0) == 0) {
+        size_t start = msg.find(":") + 2;
+        std::cout << "total_uncompressed_data=" << msg.substr(start) << std::endl;
+    } else if (msg.rfind("Total compressed data: ", 0) == 0) {
+        size_t start = msg.find(":") + 2;
+        std::cout << "total_compressed_data=" << msg.substr(start) << std::endl;
+    } else if (msg.rfind("Compression ratio: ", 0) == 0) {
+        size_t start = msg.find(":") + 2;
+        std::cout << "compression_ratio=" << msg.substr(start) << std::endl;
+    } else if (msg.rfind("Files extracted: ", 0) == 0) {
+        size_t start = msg.find(":") + 2;
+        std::cout << "files_extracted=" << msg.substr(start) << std::endl;
+    } else if (msg.rfind("Files skipped (already exist): ", 0) == 0) {
+        size_t start = msg.find(":") + 2;
+        std::cout << "files_skipped=" << msg.substr(start) << std::endl;
+    } else if (msg.rfind("Total data extracted: ", 0) == 0) {
+        size_t start = msg.find(":") + 2;
+        std::cout << "total_data_extracted=" << msg.substr(start) << std::endl;
+    } else if (msg.rfind("Integrity Check: ", 0) == 0) {
+        if (msg.find("All hashes matched") != std::string::npos) {
+            std::cout << "integrity_check=verified" << std::endl;
+        } else if (msg.find("hash mismatches found") != std::string::npos) {
+            size_t start = msg.find(":") + 2;
+            size_t end = msg.find(" hash mismatches");
+            std::cout << "integrity_check_mismatches=" << msg.substr(start, end - start) << std::endl;
+        } else if (msg.find("No hashes were stored") != std::string::npos) {
+            std::cout << "integrity_check=no_hashes" << std::endl;
+        } else if (msg.find("Skipped") != std::string::npos) {
+            std::cout << "integrity_check=skipped" << std::endl;
+        }
+    } else if (msg.rfind("Total time elapsed: ", 0) == 0) {
+        size_t start = msg.find(":") + 2;
+        std::cout << "total_time_elapsed=" << msg.substr(start) << std::endl;
+    }
+    // Add more cases as needed for other summary messages
+}
 
 void print_usage() {
     std::cout << "\n";
@@ -235,13 +398,19 @@ void print_usage() {
     std::cout << "  -l <level>     Compression level 0-9 (default: 9)\n";
     std::cout << "  -H <type>      Hash: none, md5, sha1, sha256, sha512, sha384, blake2b,\n";
     std::cout << "                 blake2s, sha3-256, sha3-512, ripemd160\n";
+    std::cout << "  -s, --solid    Create a solid archive for better compression.\n";
+    std::cout << "                 (This may make extraction slow, especially for individual files)\n";
     std::cout << "  -o <dir>       Output directory for extraction (default: .)\n";
     std::cout << "  -v             Verbose output\n";
     std::cout << "  -i             Ignore errors (skip files instead of stopping)\n";
     std::cout << "  -y             Auto-yes to all prompts (for automation)\n";
+    std::cout << "  --threads <count> Number of threads to use (default: 1)\n";
     std::cout << "  --exclude <pattern>  Exclude files/folders matching pattern (supports * and ?)\n";
     std::cout << "  --full         Store full absolute paths in archive\n";
-    std::cout << "  --no-color     Disable colored output\n\n";
+    std::cout << "  --no-color     Disable colored output\n";
+    std::cout << "  --extra        Display extra information after operation\n";
+    std::cout << "  --raw          Display raw, machine-readable output\n";
+    std::cout << "  --basic-chars  Use basic characters for progress bar\n\n";
     
     
     std::cout << "Examples:\n";
@@ -290,6 +459,7 @@ void print_command_help(const std::string& command) {
         std::cout << "Options:\n";
         std::cout << "  -c <type>       Compression type (default: zlib)\n";
         std::cout << "  -l <level>      Compression level 0-9 (default: 9)\n";
+        std::cout << "  -s, --solid     Create a solid archive for better compression\n";
         std::cout << "  -H <type>       Hash algorithm for integrity checking\n";
         std::cout << "  -v              Verbose output\n";
         std::cout << "  -i              Ignore errors\n\n";
@@ -304,6 +474,7 @@ void print_command_help(const std::string& command) {
         std::cout << "Options:\n";
         std::cout << "  -c <type>       Compression type (default: zlib)\n";
         std::cout << "  -l <level>      Compression level 0-9 (default: 9)\n";
+        std::cout << "  -s, --solid     Append as a solid block\n";
         std::cout << "  -H <type>       Hash algorithm\n";
         std::cout << "  -v              Verbose output\n";
         std::cout << "  -i              Ignore errors (skip duplicates)\n\n";

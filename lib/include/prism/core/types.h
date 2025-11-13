@@ -41,6 +41,9 @@ enum class HashType : uint8_t {
     SHA3_384 = 14
 };
 
+const uint8_t SOLID_ARCHIVE_FLAG = 0x01;
+extern const char* SOLID_BLOCK_MAGIC;
+
 struct FileMetadata {
     std::string path;
     uint64_t header_start_offset;

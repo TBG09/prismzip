@@ -4,6 +4,7 @@ find_package(BZip2 REQUIRED)
 find_package(LibLZMA REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(PkgConfig REQUIRED)
+find_package(Threads REQUIRED)
 
 pkg_check_modules(LZ4 REQUIRED liblz4)
 pkg_check_modules(ZSTD REQUIRED libzstd)
@@ -24,6 +25,7 @@ target_link_libraries(prismzip_lib
         LibLZMA::LibLZMA
         OpenSSL::SSL
         OpenSSL::Crypto
+        Threads::Threads
         ${LZ4_LIBRARIES}
         ${ZSTD_LIBRARIES}
         ${BROTLIENC_LIBRARIES}

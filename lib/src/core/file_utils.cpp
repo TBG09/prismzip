@@ -1,4 +1,3 @@
-#include <sys/statvfs.h>
 #include <prism/core/file_utils.h>
 #include <prism/core/types.h>
 #include <sys/stat.h>
@@ -10,8 +9,12 @@
 #include <regex>
 #include <cmath>
 #include <cstdlib> // For realpath
+#include <filesystem>
+#include <system_error>
 
 #include <prism/core/logging.h>
+
+namespace fs = std::filesystem;
 
 namespace prism {
 namespace core {
@@ -149,12 +152,18 @@ void list_files_recursive(const std::string& dir_path, std::vector<std::string>&
 }
 
 uint64_t get_free_disk_space(const std::string& path) {
-    struct statvfs vfs;
-    if (statvfs(path.c_str(), &vfs) == 0) {
-        return (uint64_t)vfs.f_bsize * vfs.f_bavail;
+    try {
+        std::error_code ec;
+        const fs::space_info si = fs::space(path, ec);
+        if (ec) {
+            log("Warning: Could not get free disk space for path '" + path + "': " + ec.message(), LOG_WARN);
+            return 0;
+        }
+        return si.available;
+    } catch (const fs::filesystem_error& e) {
+        log("Warning: Could not get free disk space for path '" + path + "': " + e.what(), LOG_WARN);
+        return 0;
     }
-    log("Warning: Could not get free disk space for path: '" + path + "'", LOG_WARN);
-    return 0; // Return 0 on error
 }
 
 } // namespace core

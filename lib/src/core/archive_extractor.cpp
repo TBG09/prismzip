@@ -4,22 +4,186 @@
 #include <prism/core/logging.h>
 #include <prism/compression.h>
 #include <prism/hashing/openssl_hasher.h>
+#include <prism/core/thread_pool.h>
+#include <prism/core/ui_utils.h>
 #include <fstream>
 #include <iostream>
 #include <set>
 #include <sys/stat.h> // For mkdir
+#include <thread>
+#include <mutex>
+#include <atomic>
+#include <future>
+#include <stdexcept>
 
 namespace prism {
 namespace core {
 
-// Helper from archive_writer, should be put in a shared utility file
-void show_progress_bar(int current, int total, int width = 40);
+void extract_non_solid_file(const std::string& archive_file, const FileMetadata& item, const std::string& output_dir, bool no_overwrite, bool no_verify, std::atomic<int>& files_extracted, std::atomic<int>& files_skipped, std::atomic<uint64_t>& bytes_extracted, std::atomic<int>& hash_mismatches, std::atomic<int>& hashes_checked, std::atomic<int>& progress_counter, size_t total_items_to_process, std::mutex& cout_mutex, bool raw_output, bool use_basic_chars) {
+    std::string out_path = output_dir + "/" + item.path;
 
-void extract_archive(const std::string& archive_file, const std::string& output_dir, 
-                     const std::vector<std::string>& files_to_extract, bool no_overwrite, bool no_verify) {
+    if (no_overwrite && file_exists(out_path)) {
+        {
+            std::lock_guard<std::mutex> lock(cout_mutex);
+            log("Skipping existing file: '" + item.path + "'", LOG_VERBOSE);
+        }
+        files_skipped++;
+        return;
+    }
+    
+    size_t pos = out_path.find_last_of('/');
+    if (pos != std::string::npos) {
+        std::string dir = out_path.substr(0, pos);
+        system(("mkdir -p \"" + dir + "\"" ).c_str());
+    }
+    
+    std::vector<char> compressed(item.compressed_size);
+    {
+        std::ifstream in(archive_file, std::ios::binary);
+        if (!in) {
+            throw std::runtime_error("Cannot open archive: " + archive_file);
+        }
+        in.seekg(item.data_start_offset);
+        in.read(compressed.data(), item.compressed_size);
+    }
+    
+    std::vector<char> decompressed = compression::decompress_data(compressed, 
+                                                                  item.compression_type,
+                                                                  item.file_size);
+    
+    std::ofstream out_file(out_path, std::ios::binary);
+    if (!out_file) {
+        {
+            std::lock_guard<std::mutex> lock(cout_mutex);
+            log("Warning: Cannot create file: '" + out_path + "'", LOG_WARN);
+        }
+        return;
+    }
+    
+    out_file.write(decompressed.data(), decompressed.size());
+    out_file.close();
+    
+    files_extracted++;
+    bytes_extracted += item.file_size;
+    
+    if (!no_verify && item.hash_type != HashType::NONE) {
+        hashes_checked++;
+        std::string calculated_hash = hashing::calculate_hash(out_path, item.hash_type);
+        if (calculated_hash != item.file_hash) {
+            hash_mismatches++;
+            {
+                std::lock_guard<std::mutex> lock(cout_mutex);
+                log("Hash mismatch for '" + item.path + "'. Data may be corrupted.", LOG_WARN);
+            }
+        } else {
+            std::lock_guard<std::mutex> lock(cout_mutex);
+            log("Hash verified for '" + item.path + "'", LOG_VERBOSE);
+        }
+    }
+    
+    {
+        std::lock_guard<std::mutex> lock(cout_mutex);
+        int current_progress = ++progress_counter;
+        show_progress_bar(current_progress, total_items_to_process, item.path, item.file_size, raw_output, use_basic_chars);
+    }
+}
+
+void extract_solid_block(const std::string& archive_file, const std::vector<FileMetadata>& block_items, const std::string& output_dir, bool no_overwrite, bool no_verify, std::atomic<int>& files_extracted, std::atomic<int>& files_skipped, std::atomic<uint64_t>& bytes_extracted, std::atomic<int>& hash_mismatches, std::atomic<int>& hashes_checked, std::atomic<int>& progress_counter, size_t total_items_to_process, std::mutex& cout_mutex, bool raw_output, bool use_basic_chars) {
+    if (block_items.empty()) return;
+
+    const FileMetadata& first_item = block_items[0]; // All items in block share same block info
+
+    log("Debug: first_item.compressed_size = " + std::to_string(first_item.compressed_size), LOG_DEBUG);
+
+    // 1. Read and decompress the entire solid block
+    std::vector<char> compressed_block(first_item.compressed_size);
+    {
+        std::ifstream in(archive_file, std::ios::binary);
+        if (!in) {
+            throw std::runtime_error("Cannot open archive: " + archive_file);
+        }
+        in.seekg(first_item.header_start_offset); // This is the start of the compressed data block
+        in.read(compressed_block.data(), first_item.compressed_size);
+    }
+
+    uint64_t total_uncompressed_size_in_block = 0;
+    for (const auto& item : block_items) {
+        total_uncompressed_size_in_block += item.file_size;
+    }
+    log("Debug: total_uncompressed_size_in_block = " + std::to_string(total_uncompressed_size_in_block), LOG_DEBUG);
+    log("Debug: compressed_block.size() = " + std::to_string(compressed_block.size()), LOG_DEBUG);
+
+    std::vector<char> decompressed_block = compression::decompress_data(compressed_block,
+                                                                      first_item.compression_type,
+                                                                      total_uncompressed_size_in_block);
+    log("Debug: decompressed_block.size() = " + std::to_string(decompressed_block.size()), LOG_DEBUG);
+
+    // 2. Extract individual files from the decompressed block
+    for (const auto& item : block_items) {
+        std::string out_path = output_dir + "/" + item.path;
+
+        if (no_overwrite && file_exists(out_path)) {
+            {
+                std::lock_guard<std::mutex> lock(cout_mutex);
+                log("Skipping existing file: '" + item.path + "'", LOG_VERBOSE);
+            }
+            files_skipped++;
+            continue;
+        }
+
+        size_t pos = out_path.find_last_of('/');
+        if (pos != std::string::npos) {
+            std::string dir = out_path.substr(0, pos);
+            system(("mkdir -p \"" + dir + "\"" ).c_str());
+        }
+
+        // Extract data for this specific file from the decompressed block
+        std::vector<char> file_data(decompressed_block.begin() + item.data_start_offset,
+                                    decompressed_block.begin() + item.data_start_offset + item.file_size);
+
+        std::ofstream out_file(out_path, std::ios::binary);
+        if (!out_file) {
+            {
+                std::lock_guard<std::mutex> lock(cout_mutex);
+                log("Warning: Cannot create file: '" + out_path + "'", LOG_WARN);
+            }
+            continue;
+        }
+
+        out_file.write(file_data.data(), file_data.size());
+        out_file.close();
+
+        files_extracted++;
+        bytes_extracted += item.file_size;
+
+        if (!no_verify && item.hash_type != HashType::NONE) {
+            hashes_checked++;
+            std::string calculated_hash = hashing::calculate_hash(out_path, item.hash_type);
+            if (calculated_hash != item.file_hash) {
+                hash_mismatches++;
+                {
+                    std::lock_guard<std::mutex> lock(cout_mutex);
+                    log("Hash mismatch for '" + item.path + "'. Data may be corrupted.", LOG_WARN);
+                }
+            } else {
+                std::lock_guard<std::mutex> lock(cout_mutex);
+                log("Hash verified for '" + item.path + "'", LOG_VERBOSE);
+            }
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(cout_mutex);
+            int current_progress = ++progress_counter;
+            show_progress_bar(current_progress, total_items_to_process, item.path, item.file_size, raw_output, use_basic_chars);
+        }
+    }
+}
+
+ArchiveExtractionResult extract_archive(const std::string& archive_file, const std::string& output_dir, 
+                     const std::vector<std::string>& files_to_extract, bool no_overwrite, bool no_verify, int num_threads, bool raw_output, bool use_basic_chars) {
     std::vector<FileMetadata> items = read_archive_metadata(archive_file);
     
-    std::vector<FileMetadata> items_to_extract;
+    std::vector<FileMetadata> items_to_process;
     if (!files_to_extract.empty()) {
         std::set<std::string> requested_files;
         std::vector<std::string> requested_dirs;
@@ -34,106 +198,93 @@ void extract_archive(const std::string& archive_file, const std::string& output_
 
         for (const auto& item : items) {
             if (requested_files.count(item.path)) {
-                items_to_extract.push_back(item);
+                items_to_process.push_back(item);
                 continue;
             }
             for (const auto& dir : requested_dirs) {
                 if (item.path.rfind(dir, 0) == 0) {
-                    items_to_extract.push_back(item);
+                    items_to_process.push_back(item);
                     break; 
+                }
+                // Handle case where requested_dir is a prefix of item.path
+                if (item.path.size() > dir.size() && item.path.rfind(dir, 0) == 0 && item.path[dir.size()] == '/') {
+                    items_to_process.push_back(item);
+                    break;
                 }
             }
         }
         
-        if (items_to_extract.empty()) {
+        if (items_to_process.empty()) {
             log("Warning: No matching files found in archive for the given paths", LOG_WARN);
-            return;
+            return {0, 0, 0, 0, 0, {}};
         }
     } else {
-        items_to_extract = items;
+        items_to_process = items;
     }
     
-    std::ifstream in(archive_file, std::ios::binary);
-    if (!in) {
-        throw std::runtime_error("Cannot open archive: " + archive_file);
-    }
+    std::atomic<int> files_extracted = 0;
+    std::atomic<int> files_skipped = 0;
+    std::atomic<uint64_t> bytes_extracted = 0;
+    std::atomic<int> hash_mismatches = 0;
+    std::atomic<int> hashes_checked = 0;
+    std::atomic<int> progress_counter = 0;
     
-    log("Extracting from archive: '" + archive_file + "'", LOG_INFO);
-    
-    int files_extracted = 0;
-    int files_skipped = 0;
-    uint64_t bytes_extracted = 0;
-    int hash_mismatches = 0;
-    int hashes_checked = 0;
-    
-    for (size_t i = 0; i < items_to_extract.size(); i++) {
-        show_progress_bar(i + 1, items_to_extract.size());
-        
-        const auto& item = items_to_extract[i];
-        std::string out_path = output_dir + "/" + item.path;
+    std::mutex cout_mutex;
+    std::vector<long long> durations_ms;
 
-        if (no_overwrite && file_exists(out_path)) {
-            log("Skipping existing file: '" + item.path + "'", LOG_VERBOSE);
-            files_skipped++;
-            continue;
+    // Group files into solid blocks and non-solid files
+    std::map<uint64_t, std::vector<FileMetadata>> solid_blocks;
+    std::vector<FileMetadata> non_solid_files;
+
+    for (const auto& item : items_to_process) {
+        // Simplified heuristic: if header_start_offset == data_start_offset, it's a non-solid file.
+        // Otherwise, it's a solid file (header_start_offset points to compressed block, data_start_offset points within uncompressed stream).
+        if (item.header_start_offset == item.data_start_offset) {
+            non_solid_files.push_back(item);
+        } else {
+            solid_blocks[item.header_start_offset].push_back(item);
         }
-        
-        size_t pos = out_path.find_last_of('/');
-        if (pos != std::string::npos) {
-            std::string dir = out_path.substr(0, pos);
-            system(("mkdir -p \"" + dir + "\"" ).c_str());
+    }
+
+    {
+        ThreadPool pool(num_threads);
+        std::vector<std::future<void>> results;
+
+        // Enqueue tasks for non-solid files
+        for (const auto& item : non_solid_files) {
+            results.emplace_back(pool.enqueue([&, item] {
+                extract_non_solid_file(archive_file, item, output_dir, no_overwrite, no_verify, files_extracted, files_skipped, bytes_extracted, hash_mismatches, hashes_checked, progress_counter, items_to_process.size(), cout_mutex, raw_output, use_basic_chars);
+            }));
         }
-        
-        in.seekg(item.data_start_offset);
-        
-        std::vector<char> compressed(item.compressed_size);
-        in.read(compressed.data(), item.compressed_size);
-        
-        std::vector<char> decompressed = compression::decompress_data(compressed, 
-                                                                      item.compression_type,
-                                                                      item.file_size);
-        
-        std::ofstream out_file(out_path, std::ios::binary);
-        if (!out_file) {
-            log("Warning: Cannot create file: '" + out_path + "'", LOG_WARN);
-            continue;
+
+        // Enqueue tasks for solid blocks
+        for (const auto& pair : solid_blocks) {
+            results.emplace_back(pool.enqueue([&, pair] {
+                extract_solid_block(archive_file, pair.second, output_dir, no_overwrite, no_verify, files_extracted, files_skipped, bytes_extracted, hash_mismatches, hashes_checked, progress_counter, items_to_process.size(), cout_mutex, raw_output, use_basic_chars);
+            }));
         }
+
+        for(auto && result : results)
+            result.get();
         
-        out_file.write(decompressed.data(), decompressed.size());
-        out_file.close();
-        
-        files_extracted++;
-        bytes_extracted += item.file_size;
-        
-        if (!no_verify && item.hash_type != HashType::NONE) {
-            hashes_checked++;
-            std::string calculated_hash = hashing::calculate_hash(out_path, item.hash_type);
-            if (calculated_hash != item.file_hash) {
-                hash_mismatches++;
-                log("Hash mismatch for '" + item.path + "'. Data may be corrupted.", LOG_WARN);
-            } else {
-                log("Hash verified for '" + item.path + "'", LOG_VERBOSE);
-            }
-        }
-        
-        log("Extracted file '" + item.path + "' (" + format_size(item.file_size) + ")", LOG_INFO);
+        durations_ms = pool.get_thread_durations();
     }
     
-    if (items_to_extract.size() > 0) std::cout << std::endl;
+    if (items_to_process.size() > 0 && !raw_output) std::cout << std::endl;
     
     log("Successfully extracted from archive '" + archive_file + "'", LOG_SUCCESS);
-    log("Files extracted: " + std::to_string(files_extracted), LOG_SUM);
+    log("Files extracted: " + std::to_string(files_extracted.load()), LOG_SUM);
     if (files_skipped > 0) {
-        log("Files skipped (already exist): " + std::to_string(files_skipped), LOG_SUM);
+        log("Files skipped (already exist): " + std::to_string(files_skipped.load()), LOG_SUM);
     }
-    log("Total data extracted: " + format_size(bytes_extracted), LOG_SUM);
+    log("Total data extracted: " + format_size(bytes_extracted.load()), LOG_SUM);
     
     if (!no_verify) {
         if (hashes_checked > 0) {
             if (hash_mismatches == 0) {
                 log("Integrity Check: All hashes matched. File integrity verified.", LOG_SUM);
             } else {
-                log("Integrity Check: " + std::to_string(hash_mismatches) + " hash mismatches found.", LOG_WARN);
+                log("Integrity Check: " + std::to_string(hash_mismatches.load()) + " hash mismatches found.", LOG_WARN);
             }
         } else {
             log("Integrity Check: No hashes were stored in the archive for verification.", LOG_SUM);
@@ -141,6 +292,8 @@ void extract_archive(const std::string& archive_file, const std::string& output_
     } else {
         log("Integrity Check: Skipped.", LOG_SUM);
     }
+
+    return {files_extracted.load(), files_skipped.load(), bytes_extracted.load(), hashes_checked.load(), hash_mismatches.load(), durations_ms};
 }
 
 } // namespace core

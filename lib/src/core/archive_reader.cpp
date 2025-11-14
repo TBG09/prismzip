@@ -18,15 +18,13 @@ FileMetadata read_non_solid_file_metadata(std::ifstream& f, uint64_t& current_of
     f.read(&item.path[0], path_len);
     if (f.gcount() < path_len) throw std::runtime_error("Unexpected EOF while reading path.");
     
-    uint8_t comp_type, level, hash_type_val;
-    f.read((char*)&comp_type, 1);
-    f.read((char*)&level, 1);
-    f.read((char*)&hash_type_val, 1);
+    uint8_t comp_level_hash_bytes[3];
+    f.read((char*)comp_level_hash_bytes, 3);
     if (f.gcount() < 3) throw std::runtime_error("Unexpected EOF while reading compression/hash info.");
 
-    item.compression_type = static_cast<CompressionType>(comp_type);
-    item.level = level;
-    item.hash_type = static_cast<HashType>(hash_type_val);
+    item.compression_type = static_cast<CompressionType>(comp_level_hash_bytes[0]);
+    item.level = comp_level_hash_bytes[1];
+    item.hash_type = static_cast<HashType>(comp_level_hash_bytes[2]);
     
     uint16_t hash_len;
     f.read((char*)&hash_len, 2);
@@ -37,19 +35,22 @@ FileMetadata read_non_solid_file_metadata(std::ifstream& f, uint64_t& current_of
     if (f.gcount() < hash_len) throw std::runtime_error("Unexpected EOF while reading hash.");
     
     f.read((char*)&item.file_size, 8);
+    if (f.gcount() < 8) throw std::runtime_error("Unexpected EOF while reading file size.");
     f.read((char*)&item.compressed_size, 8);
-    if (f.gcount() < 16) throw std::runtime_error("Unexpected EOF while reading file/compressed size.");
+    if (f.gcount() < 8) throw std::runtime_error("Unexpected EOF while reading compressed size.");
     
     f.read((char*)&item.creation_time, 8);
+    if (f.gcount() < 8) throw std::runtime_error("Unexpected EOF while reading creation time.");
     f.read((char*)&item.modification_time, 8);
+    if (f.gcount() < 8) throw std::runtime_error("Unexpected EOF while reading modification time.");
     f.read((char*)&item.permissions, 4);
+    if (f.gcount() < 4) throw std::runtime_error("Unexpected EOF while reading permissions.");
     f.read((char*)&item.uid, 4);
+    if (f.gcount() < 4) throw std::runtime_error("Unexpected EOF while reading uid.");
     f.read((char*)&item.gid, 4);
-    if (f.gcount() < 24) throw std::runtime_error("Unexpected EOF while reading file properties.");
+    if (f.gcount() < 4) throw std::runtime_error("Unexpected EOF while reading gid.");
     
     item.data_start_offset = f.tellg();
-    current_offset = item.data_start_offset; // Update current offset for next header
-    
     f.seekg(item.compressed_size, std::ios::cur); // Move past data
     current_offset = f.tellg();
     

@@ -31,3 +31,7 @@ target_link_libraries(prismzip_lib
         ${BROTLIENC_LIBRARIES}
         ${BROTLIDEC_LIBRARIES}
 )
+
+install(TARGETS prismzip_lib
+    ARCHIVE DESTINATION lib
+)

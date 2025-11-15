@@ -10,9 +10,11 @@ pkg_check_modules(LZ4 REQUIRED liblz4)
 pkg_check_modules(ZSTD REQUIRED libzstd)
 pkg_check_modules(BROTLIENC REQUIRED libbrotlienc)
 pkg_check_modules(BROTLIDEC REQUIRED libbrotlidec)
+pkg_check_modules(SNAPPY REQUIRED snappy)
+pkg_check_modules(LZO REQUIRED lzo2)
 
 # Gather source files
-file(GLOB_RECURSE LIB_SOURCES "src/*.cpp" "src/**/*.cpp" "src/**/**/*.cpp")
+file(GLOB_RECURSE LIB_SOURCES "src/*.cpp" "src/**/*.cpp" "src/**/**/*.cpp" "src/compression/snappy.cpp" "src/compression/lzo.cpp")
 
 add_library(prismzip_lib STATIC ${LIB_SOURCES})
 
@@ -30,6 +32,8 @@ target_link_libraries(prismzip_lib
         ${ZSTD_LIBRARIES}
         ${BROTLIENC_LIBRARIES}
         ${BROTLIDEC_LIBRARIES}
+        ${SNAPPY_LIBRARIES}
+        ${LZO_LIBRARIES}
 )
 
 install(TARGETS prismzip_lib

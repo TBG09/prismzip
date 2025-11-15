@@ -45,7 +45,7 @@ void remove_from_archive(const std::string& archive_file, const std::vector<std:
     }
 
     temp_out.write("PRZM", 4);
-    uint16_t version = 1;
+    uint16_t version = 2;
     temp_out.write((char*)&version, 2);
 
     log("Rebuilding archive...", LOG_INFO);

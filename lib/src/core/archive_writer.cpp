@@ -317,7 +317,7 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
 
 
-                uint16_t version = 1;
+                uint16_t version = 2;
 
 
 
@@ -391,7 +391,7 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
         out.write("PRZM", 4);
 
-        uint16_t version = 1;
+        uint16_t version = 2;
 
         out.write((char*)&version, 2);
 

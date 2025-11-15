@@ -3,8 +3,8 @@
 
 #include <prism/core/types.h>
 #include <prism/core/result_types.h>
-#include <prism/core/logging.h> // For log()
-#include <cstring> // Required for memcpy
+#include <prism/core/logging.h> 
+#include <cstring> 
 #include <string>
 #include <vector>
 #include <cstdint>
@@ -72,7 +72,7 @@ ArchiveCreationResult append_to_archive(const std::string& archive_file, const s
                       CompressionType comp_type, int level, HashType hash_type, 
                       bool ignore_errors, const std::vector<std::string>& exclude_patterns, bool use_full_path, bool auto_yes = false, int num_threads = 1, bool raw_output = false, bool use_basic_chars = false, bool solid_mode = false);
 
-} // namespace core
-} // namespace prism
+} 
+} 
 
-#endif // PRISM_CORE_ARCHIVE_WRITER_H
+#endif 

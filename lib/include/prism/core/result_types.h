@@ -23,7 +23,7 @@ struct ArchiveExtractionResult {
     std::vector<long long> thread_durations_ms;
 };
 
-} // namespace core
-} // namespace prism
+} 
+} 
 
-#endif // PRISM_CORE_RESULT_TYPES_H
+#endif 

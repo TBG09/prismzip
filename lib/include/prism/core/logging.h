@@ -15,7 +15,7 @@ enum LogLevel {
     LOG_WARN,
     LOG_ERROR,
     LOG_VERBOSE,
-    LOG_DEBUG, // New debug level
+    LOG_DEBUG, 
     LOG_SUCCESS
 };
 
@@ -23,7 +23,7 @@ void set_log_handler(LogHandler handler);
 
 void log(const std::string& msg, LogLevel level = LOG_INFO);
 
-} // namespace core
-} // namespace prism
+} 
+} 
 
 #endif

@@ -54,5 +54,5 @@ std::vector<char> lzma_decompress(const std::vector<char>& data, size_t original
     throw std::runtime_error("LZMA decompression failed");
 }
 
-} // namespace compression
-} // namespace prism
+} 
+} 

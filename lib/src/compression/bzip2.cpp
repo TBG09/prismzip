@@ -35,5 +35,5 @@ std::vector<char> bzip2_decompress(const std::vector<char>& data, size_t origina
     return result;
 }
 
-} // namespace compression
-} // namespace prism
+} 
+} 

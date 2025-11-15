@@ -25,7 +25,7 @@ bool should_compress(const std::string& file_path, CompressionType compression_t
 bool get_file_properties(const std::string& path, FileMetadata& metadata);
 bool set_file_properties(const std::string& path, const FileMetadata& metadata);
 
-} // namespace core
-} // namespace prism
+} 
+} 
 
 #endif

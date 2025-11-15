@@ -16,7 +16,6 @@
 namespace prism {
 namespace cli {
 
-// Global flags for CLI output
 bool is_output_en = true;
 bool is_sum_en = true;
 bool is_verb_en = false;
@@ -27,7 +26,6 @@ bool is_extra_info_en = false;
 bool is_raw_output_en = false;
 bool use_basic_chars = false;
 
-// ANSI color codes
 const std::string COLOR_RESET = "\033[0m";
 const std::string COLOR_RED = "\033[91m";
 const std::string COLOR_GREEN = "\033[92m";
@@ -35,7 +33,6 @@ const std::string COLOR_YELLOW = "\033[93m";
 const std::string COLOR_BLUE = "\033[94m";
 const std::string COLOR_CYAN = "\033[96m";
 
-// CLI-specific output functions
 void output(const std::string& msg) {
     if (is_output_en) {
         if (color_en) std::cout << COLOR_CYAN << msg << COLOR_RESET << std::endl;
@@ -83,13 +80,17 @@ void print_raw_summary(const std::string& msg);
 void cli_log_handler(const std::string& msg, int level) {
     if (is_raw_output_en) {
         switch(static_cast<core::LogLevel>(level)) {
-            case core::LOG_INFO:    /* Suppress */ break;
+            case core::LOG_INFO:    
+                break;
             case core::LOG_SUM:     print_raw_summary(msg); break;
             case core::LOG_WARN:    std::cerr << msg << std::endl; break;
             case core::LOG_ERROR:   std::cerr << msg << std::endl; break;
-            case core::LOG_VERBOSE: /* Suppress */ break;
-            case core::LOG_DEBUG:   /* Suppress */ break; // Suppress debug in raw output
-            case core::LOG_SUCCESS: /* Suppress */ break;
+            case core::LOG_VERBOSE: 
+                break;
+            case core::LOG_DEBUG:   
+                break; 
+            case core::LOG_SUCCESS: 
+                break;
         }
     } else {
         switch(static_cast<core::LogLevel>(level)) {
@@ -98,7 +99,7 @@ void cli_log_handler(const std::string& msg, int level) {
             case core::LOG_WARN:    warn(msg); break;
             case core::LOG_ERROR:   err(msg); break;
             case core::LOG_VERBOSE: verb(msg); break;
-            case core::LOG_DEBUG:   if (is_verb_en) verb(msg); break; // Print debug messages if verbose is enabled
+            case core::LOG_DEBUG:   if (is_verb_en) verb(msg); break; 
             case core::LOG_SUCCESS: success(msg); break;
         }
     }
@@ -144,7 +145,7 @@ int run_cli(int argc, char* argv[]) {
     bool auto_yes = false;
         bool no_overwrite = false;
         bool no_verify = false;
-        bool no_preserve_props = false; // New option
+        bool no_preserve_props = false; 
         int num_threads = 1;
         bool solid_mode = false;
         
@@ -161,7 +162,7 @@ int run_cli(int argc, char* argv[]) {
                 no_verify = true;
             } else if (arg == "--no-overwrite") {
                 no_overwrite = true;
-            } else if (arg == "--no-preserve-props") { // New option parsing
+            } else if (arg == "--no-preserve-props") { 
                 no_preserve_props = true;
             } else if (arg == "--no-color") {
                 color_en = false;
@@ -226,7 +227,7 @@ int run_cli(int argc, char* argv[]) {
                 if (paths.empty()) { print_command_help("append"); return 1; }
                 result = core::append_to_archive(archive_file, paths, comp_type, comp_level, hash_type, ignore_errors, exclude_patterns, use_full_path, auto_yes, num_threads, is_raw_output_en, use_basic_chars, solid_mode);
             } else if (command == "list") {
-                core::list_archive(archive_file, false); // false for not-raw
+                core::list_archive(archive_file, false); 
                     } else if (command == "extract") {
                         result = core::extract_archive(archive_file, output_dir, paths, no_overwrite, no_verify, num_threads, is_raw_output_en, use_basic_chars, no_preserve_props);            } else if (command == "remove") {
                 if (paths.empty()) { print_command_help("remove"); return 1; }
@@ -258,12 +259,10 @@ int run_cli(int argc, char* argv[]) {
         return 0;
     }
     
-    // ... (print_usage and print_command_help functions go here) ...
     
     #include <any>
     #include <prism/core/file_utils.h>
     
-    // ... (rest of the file)
     
     void print_extra_info(const std::string& command, int num_threads, core::CompressionType comp_type, int comp_level, core::HashType hash_type, const std::any& result) {
         if (is_raw_output_en) {
@@ -333,10 +332,9 @@ int run_cli(int argc, char* argv[]) {
     }
     
     void print_raw_summary(const std::string& msg) {
-        // This parsing is fragile and depends on the exact format of log messages.
-        // A more robust solution would involve passing structured data from the core library.
+        
     
-        if (msg.rfind("Items added: ", 0) == 0) { // Starts with "Items added: "
+        if (msg.rfind("Items added: ", 0) == 0) { 
             size_t start = msg.find(":") + 2;
             size_t end = msg.find(" files");
             std::cout << "items_added=" << msg.substr(start, end - start) << std::endl;
@@ -374,7 +372,7 @@ int run_cli(int argc, char* argv[]) {
             size_t start = msg.find(":") + 2;
             std::cout << "total_time_elapsed=" << msg.substr(start) << std::endl;
         }
-        // Add more cases as needed for other summary messages
+        
     }
     
     void print_usage() {

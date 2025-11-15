@@ -13,7 +13,7 @@ void show_progress_bar(int current, int total, const std::string& file_path, uin
             std::cout << std::endl;
         }
     } else {
-        const int bar_width = 30; // Reduced width to make space for text
+        const int bar_width = 30;
         float progress = (float)current / total;
         int pos = bar_width * progress;
 
@@ -54,4 +54,3 @@ bool confirm_action(const std::string& message, bool auto_yes) {
 
 }
 }
-

@@ -10,7 +10,7 @@ namespace compression {
 std::vector<char> compress_data(const std::vector<char>& data, prism::core::CompressionType comp_type, int level);
 std::vector<char> decompress_data(const std::vector<char>& data, prism::core::CompressionType comp_type, size_t original_size);
 
-} // namespace compression
-} // namespace prism
+} 
+} 
 
-#endif // PRISM_COMPRESSION_H
+#endif 

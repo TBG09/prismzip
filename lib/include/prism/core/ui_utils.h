@@ -13,4 +13,4 @@ bool confirm_action(const std::string& message, bool auto_yes);
 }
 }
 
-#endif // PRISM_CORE_UI_UTILS_H
+#endif 

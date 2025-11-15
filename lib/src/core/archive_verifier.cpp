@@ -22,7 +22,7 @@ void verify_non_solid_file(const std::string& archive_file, const FileMetadata& 
         return;
     }
 
-    std::string out_path = temp_dir + "/" + item.path + "_" + std::to_string(progress_counter.load()); // Unique temp file name
+    std::string out_path = temp_dir + "/" + item.path + "_" + std::to_string(progress_counter.load());
     
     std::vector<char> compressed_data(item.compressed_size);
     std::ifstream in(archive_file, std::ios::binary);
@@ -61,7 +61,6 @@ void verify_solid_block(const std::string& archive_file, const std::vector<FileM
 
     const FileMetadata& first_item = block_items[0];
 
-    // 1. Read and decompress the entire solid block
     std::vector<char> compressed_block(first_item.compressed_size);
     {
         std::ifstream in(archive_file, std::ios::binary);
@@ -81,15 +80,13 @@ void verify_solid_block(const std::string& archive_file, const std::vector<FileM
                                                                       first_item.compression_type,
                                                                       total_uncompressed_size_in_block);
 
-    // 2. Verify individual files from the decompressed block
     for (const auto& item : block_items) {
         if (item.hash_type == HashType::NONE) {
             continue;
         }
 
-        std::string out_path = temp_dir + "/" + item.path + "_" + std::to_string(progress_counter.load()); // Unique temp file name
+        std::string out_path = temp_dir + "/" + item.path + "_" + std::to_string(progress_counter.load());
 
-        // Extract data for this specific file from the decompressed block
         std::vector<char> file_data(decompressed_block.begin() + item.data_start_offset,
                                     decompressed_block.begin() + item.data_start_offset + item.file_size);
 
@@ -134,17 +131,14 @@ void verify_archive(const std::string& archive_file, bool raw_output, bool use_b
     std::atomic<int> checked_files = 0;
     std::atomic<int> progress_counter = 0;
 
-    // Group files into solid blocks and non-solid files
     std::map<uint64_t, std::vector<FileMetadata>> solid_blocks;
     std::vector<FileMetadata> non_solid_files;
 
     for (const auto& item : items) {
         if (item.hash_type == HashType::NONE) {
-            continue; // Only verify files with hashes
+            continue;
         }
 
-        // Heuristic for solid block: if header_start_offset == data_start_offset, it's a non-solid file.
-        // Otherwise, it's a solid file.
         if (item.header_start_offset == item.data_start_offset) {
             non_solid_files.push_back(item);
         } else {
@@ -164,17 +158,15 @@ void verify_archive(const std::string& archive_file, bool raw_output, bool use_b
     }
 
     {
-        ThreadPool pool(1); // Use 1 thread for verification to avoid race conditions with temp files
+        ThreadPool pool(1);
         std::vector<std::future<void>> results;
 
-        // Enqueue tasks for non-solid files
         for (const auto& item : non_solid_files) {
             results.emplace_back(pool.enqueue([&, item] {
                 verify_non_solid_file(archive_file, item, temp_dir, mismatches, checked_files, progress_counter, total_items_to_process, raw_output, use_basic_chars);
             }));
         }
 
-        // Enqueue tasks for solid blocks
         for (const auto& pair : solid_blocks) {
             results.emplace_back(pool.enqueue([&, pair] {
                 verify_solid_block(archive_file, pair.second, temp_dir, mismatches, checked_files, progress_counter, total_items_to_process, raw_output, use_basic_chars);

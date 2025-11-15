@@ -35,7 +35,7 @@ private:
     std::vector<std::atomic<long long>> thread_durations;
 };
 
-// Constructor: create and launch the worker threads
+
 inline ThreadPool::ThreadPool(size_t threads) : stop(false), thread_durations(threads) {
     for(size_t i = 0; i < threads; ++i) {
         thread_durations[i] = 0;
@@ -61,7 +61,7 @@ inline ThreadPool::ThreadPool(size_t threads) : stop(false), thread_durations(th
     }
 }
 
-// Add new work item to the pool
+
 template<class F, class... Args>
 auto ThreadPool::enqueue(F&& f, Args&&... args) 
     -> std::future<typename std::result_of<F(Args...)>::type> {
@@ -84,7 +84,7 @@ auto ThreadPool::enqueue(F&& f, Args&&... args)
     return res;
 }
 
-// Destructor: join all threads
+
 inline ThreadPool::~ThreadPool() {
     {
         std::unique_lock<std::mutex> lock(queue_mutex);
@@ -103,7 +103,7 @@ inline std::vector<long long> ThreadPool::get_thread_durations() {
     return durations;
 }
 
-} // namespace core
-} // namespace prism
+} 
+} 
 
-#endif // PRISM_CORE_THREAD_POOL_H
+#endif 

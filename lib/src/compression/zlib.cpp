@@ -34,5 +34,5 @@ std::vector<char> zlib_decompress(const std::vector<char>& data, size_t original
     return result;
 }
 
-} // namespace compression
-} // namespace prism
+} 
+} 

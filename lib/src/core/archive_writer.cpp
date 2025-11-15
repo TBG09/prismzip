@@ -1,5 +1,5 @@
 #include <prism/core/archive_writer.h>
-#include <prism/core/archive_reader.h> // For append
+#include <prism/core/archive_reader.h>
 #include <prism/core/file_utils.h>
 #include <prism/core/logging.h>
 #include <prism/compression.h>
@@ -7,28 +7,56 @@
 #include <prism/core/ui_utils.h>
 #include <prism/core/thread_pool.h>
 #include <fstream>
-#include <iostream> // For progress bar
+#include <iostream>
 #include <iomanip>
 #include <set>
 #include <filesystem>
-#include <sys/stat.h> // Required for stat struct
+#include <sys/stat.h>
 #include <thread>
 #include <mutex>
 #include <atomic>
 #include <stdexcept>
 #include <algorithm>
-#include <cstring> // Required for memcpy
+#include <cstring>
 
 namespace fs = std::filesystem;
 
 namespace prism {
 namespace core {
 
+namespace { // anonymous namespace
+std::string get_archive_path(const std::string& file_path, const std::vector<std::string>& initial_paths, bool use_full_path) {
+    if (use_full_path) {
+        return get_absolute_path(file_path);
+    }
+
+    const std::string* matching_path_str = nullptr;
+    for (const auto& p_str : initial_paths) {
+        if (file_path.rfind(p_str, 0) == 0) {
+            if (!matching_path_str || p_str.length() > matching_path_str->length()) {
+                matching_path_str = &p_str;
+            }
+        }
+    }
+
+    fs::path base_path;
+    if (matching_path_str) {
+        base_path = fs::path(*matching_path_str).parent_path();
+    } else {
+        base_path = fs::path(file_path).parent_path();
+    }
+
+    if (base_path.empty()) {
+        base_path = ".";
+    }
+
+    return fs::relative(file_path, base_path).string();
+}
+} // anonymous namespace
+
 uint64_t estimate_archive_size(const std::string& archive_file, const std::vector<std::string>& paths,
                              CompressionType comp_type,
                              bool ignore_errors, const std::vector<std::string>& exclude_patterns, bool use_full_path);
-
-// Helper function for solid archive metadata
 
 inline std::vector<char> create_solid_file_metadata(const std::string& archive_path, HashType hash_type, const std::string& file_hash, uint64_t file_size,
                                                     uint64_t creation_time, uint64_t modification_time,
@@ -74,8 +102,6 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
                    bool ignore_errors, const std::vector<std::string>& exclude_patterns, bool use_full_path, bool auto_yes, int num_threads, bool raw_output, bool use_basic_chars, bool solid_mode) {
 
 
-
-    // Disk space verification (common for both modes)
 
     uint64_t estimated_size = estimate_archive_size(archive_file, paths, comp_type, ignore_errors, exclude_patterns, use_full_path);
 
@@ -143,8 +169,6 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
     if (solid_mode) {
 
-        // --- SOLID MODE ---
-
         log("Creating solid archive file named '" + archive_file + "'", LOG_INFO);
 
 
@@ -161,19 +185,9 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
         for (const auto& file_path : all_files) {
 
-            // Get relative path for archive
-
-            fs::path input_path_obj(file_path);
-
-            fs::path base_path = input_path_obj.parent_path();
-
-            if (base_path.empty()) { base_path = "."; }
-
-            std::string archive_path = use_full_path ? get_absolute_path(file_path) : fs::relative(file_path, base_path).string();
+                        std::string archive_path = get_archive_path(file_path, paths, use_full_path);
 
 
-
-            // Read file data
 
             std::ifstream file(file_path, std::ios::binary);
 
@@ -199,15 +213,9 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
 
 
-            // Append data to the main block
-
             all_uncompressed_data.insert(all_uncompressed_data.end(), data.begin(), data.end());
 
             total_uncompressed_size += data.size();
-
-
-
-                        // Calculate hash
 
 
 
@@ -259,10 +267,6 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
 
 
-                        // Create and append metadata
-
-
-
                         std::vector<char> file_metadata = create_solid_file_metadata(archive_path, hash_type, hash, data.size(),
 
 
@@ -289,8 +293,6 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
 
 
-        // Compress the entire data block
-
         log("Compressing solid block...", LOG_INFO);
 
         std::vector<char> compressed_data = compression::compress_data(all_uncompressed_data, comp_type, level);
@@ -298,8 +300,6 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
         log("Compression complete.", LOG_VERBOSE);
 
 
-
-        // Write to archive
 
         std::ofstream out(archive_file, std::ios::binary);
 
@@ -377,8 +377,6 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
     } else {
 
-        // --- NON-SOLID MODE (existing logic) ---
-
         std::ofstream out(archive_file, std::ios::binary);
 
         if (!out) {
@@ -395,7 +393,7 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
         out.write((char*)&version, 2);
 
-        uint8_t flags = 0; // No flags
+        uint8_t flags = 0;
 
         out.write((char*)&flags, 1);
 
@@ -435,29 +433,7 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
                 results.emplace_back(pool.enqueue([&, file_path] {
 
-                    fs::path input_path_obj(file_path);
-
-                    fs::path base_path = input_path_obj.parent_path();
-
-                    if (base_path.empty()) {
-
-                        base_path = ".";
-
-                    }
-
-
-
-                    std::string archive_path;
-
-                    if (use_full_path) {
-
-                        archive_path = get_absolute_path(file_path);
-
-                    } else {
-
-                        archive_path = fs::relative(file_path, base_path).string();
-
-                    }
+                                        std::string archive_path = get_archive_path(file_path, paths, use_full_path);
 
                     
 
@@ -654,7 +630,6 @@ ArchiveCreationResult append_to_archive(const std::string& archive_file, const s
         throw std::runtime_error("Archive file not found: " + archive_file);
     }
     
-    // Disk space verification
     uint64_t estimated_size = estimate_archive_size(archive_file, paths, comp_type, ignore_errors, exclude_patterns, use_full_path);
     fs::path p = archive_file;
     fs::path parent = p.parent_path();
@@ -706,10 +681,7 @@ ArchiveCreationResult append_to_archive(const std::string& archive_file, const s
         int files_added = 0;
 
         for (const auto& file_path : all_files) {
-            fs::path input_path_obj(file_path);
-            fs::path base_path = input_path_obj.parent_path();
-            if (base_path.empty()) { base_path = "."; }
-            std::string archive_path = use_full_path ? get_absolute_path(file_path) : fs::relative(file_path, base_path).string();
+            std::string archive_path = get_archive_path(file_path, paths, use_full_path);
 
             if (existing_paths.count(archive_path)) {
                 if (ignore_errors) {
@@ -788,7 +760,6 @@ ArchiveCreationResult append_to_archive(const std::string& archive_file, const s
         return {(long)files_added, total_uncompressed_size, compressed_data.size(), {}};
 
     } else {
-        // --- NON-SOLID APPEND ---
         std::vector<FileMetadata> existing_items = read_archive_metadata(archive_file);
         std::set<std::string> existing_paths;
         for (const auto& item : existing_items) {
@@ -817,18 +788,7 @@ ArchiveCreationResult append_to_archive(const std::string& archive_file, const s
 
             for (const auto& file_path : all_files) {
                 results.emplace_back(pool.enqueue([&, file_path] {
-                    fs::path input_path_obj(file_path);
-                    fs::path base_path = input_path_obj.parent_path();
-                    if (base_path.empty()) {
-                        base_path = ".";
-                    }
-
-                    std::string archive_path;
-                    if (use_full_path) {
-                        archive_path = get_absolute_path(file_path);
-                    } else {
-                        archive_path = fs::relative(file_path, base_path).string();
-                    }
+                    std::string archive_path = get_archive_path(file_path, paths, use_full_path);
 
                     if (existing_paths.count(archive_path)) {
                         if (ignore_errors) {
@@ -914,9 +874,8 @@ uint64_t estimate_archive_size(const std::string& archive_file, const std::vecto
                              CompressionType comp_type,
                              bool ignore_errors, const std::vector<std::string>& exclude_patterns, bool use_full_path) {
     uint64_t total_uncompressed_size = 0;
-    double compression_ratio = 1.0; // 1.0 means 100% of original size
+    double compression_ratio = 1.0;
 
-    // Determine a rough compression ratio based on type
     switch (comp_type) {
         case CompressionType::NONE:
             compression_ratio = 1.0;
@@ -928,10 +887,10 @@ uint64_t estimate_archive_size(const std::string& archive_file, const std::vecto
         case CompressionType::LZ4:
         case CompressionType::ZSTD:
         case CompressionType::BROTLI:
-            compression_ratio = 0.5; // Assume 50% compression for now
+            compression_ratio = 0.5;
             break;
         default:
-            compression_ratio = 1.0; // Unknown type, assume no compression
+            compression_ratio = 1.0;
             break;
     }
 
@@ -970,8 +929,7 @@ uint64_t estimate_archive_size(const std::string& archive_file, const std::vecto
         }
     }
 
-    // Add some overhead for archive metadata (e.g., 1% of total size, or a fixed minimum)
-    uint64_t metadata_overhead = std::max((uint64_t)1024, total_uncompressed_size / 100); // Min 1KB or 1%
+    uint64_t metadata_overhead = std::max((uint64_t)1024, total_uncompressed_size / 100);
 
     return (uint64_t)(total_uncompressed_size * compression_ratio) + metadata_overhead;
 }

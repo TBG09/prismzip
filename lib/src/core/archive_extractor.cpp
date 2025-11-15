@@ -9,7 +9,7 @@
 #include <fstream>
 #include <iostream>
 #include <set>
-#include <sys/stat.h> // For mkdir
+#include <sys/stat.h>
 #include <thread>
 #include <mutex>
 #include <atomic>
@@ -95,18 +95,17 @@ void extract_non_solid_file(const std::string& archive_file, const FileMetadata&
 void extract_solid_block(const std::string& archive_file, const std::vector<FileMetadata>& block_items, const std::string& output_dir, bool no_overwrite, bool no_verify, std::atomic<int>& files_extracted, std::atomic<int>& files_skipped, std::atomic<uint64_t>& bytes_extracted, std::atomic<int>& hash_mismatches, std::atomic<int>& hashes_checked, std::atomic<int>& progress_counter, size_t total_items_to_process, std::mutex& cout_mutex, bool raw_output, bool use_basic_chars, bool no_preserve_props) {
     if (block_items.empty()) return;
 
-    const FileMetadata& first_item = block_items[0]; // All items in block share same block info
+    const FileMetadata& first_item = block_items[0];
 
     log("Debug: first_item.compressed_size = " + std::to_string(first_item.compressed_size), LOG_DEBUG);
 
-    // 1. Read and decompress the entire solid block
     std::vector<char> compressed_block(first_item.compressed_size);
     {
         std::ifstream in(archive_file, std::ios::binary);
         if (!in) {
             throw std::runtime_error("Cannot open archive: " + archive_file);
         }
-        in.seekg(first_item.header_start_offset); // This is the start of the compressed data block
+        in.seekg(first_item.header_start_offset);
         in.read(compressed_block.data(), first_item.compressed_size);
     }
 
@@ -122,7 +121,6 @@ void extract_solid_block(const std::string& archive_file, const std::vector<File
                                                                       total_uncompressed_size_in_block);
     log("Debug: decompressed_block.size() = " + std::to_string(decompressed_block.size()), LOG_DEBUG);
 
-    // 2. Extract individual files from the decompressed block
     for (const auto& item : block_items) {
         std::string out_path = output_dir + "/" + item.path;
 
@@ -141,7 +139,6 @@ void extract_solid_block(const std::string& archive_file, const std::vector<File
             system(("mkdir -p \"" + dir + "\"" ).c_str());
         }
 
-        // Extract data for this specific file from the decompressed block
         std::vector<char> file_data(decompressed_block.begin() + item.data_start_offset,
                                     decompressed_block.begin() + item.data_start_offset + item.file_size);
 
@@ -214,7 +211,6 @@ ArchiveExtractionResult extract_archive(const std::string& archive_file, const s
                     items_to_process.push_back(item);
                     break; 
                 }
-                // Handle case where requested_dir is a prefix of item.path
                 if (item.path.size() > dir.size() && item.path.rfind(dir, 0) == 0 && item.path[dir.size()] == '/') {
                     items_to_process.push_back(item);
                     break;
@@ -240,13 +236,10 @@ ArchiveExtractionResult extract_archive(const std::string& archive_file, const s
     std::mutex cout_mutex;
     std::vector<long long> durations_ms;
 
-    // Group files into solid blocks and non-solid files
     std::map<uint64_t, std::vector<FileMetadata>> solid_blocks;
     std::vector<FileMetadata> non_solid_files;
 
     for (const auto& item : items_to_process) {
-        // Simplified heuristic: if header_start_offset == data_start_offset, it's a non-solid file.
-        // Otherwise, it's a solid file (header_start_offset points to compressed block, data_start_offset points within uncompressed stream).
         if (item.header_start_offset == item.data_start_offset) {
             non_solid_files.push_back(item);
         } else {
@@ -258,14 +251,12 @@ ArchiveExtractionResult extract_archive(const std::string& archive_file, const s
         ThreadPool pool(num_threads);
         std::vector<std::future<void>> results;
 
-        // Enqueue tasks for non-solid files
         for (const auto& item : non_solid_files) {
             results.emplace_back(pool.enqueue([&, item] {
                 extract_non_solid_file(archive_file, item, output_dir, no_overwrite, no_verify, files_extracted, files_skipped, bytes_extracted, hash_mismatches, hashes_checked, progress_counter, items_to_process.size(), cout_mutex, raw_output, use_basic_chars, no_preserve_props);
             }));
         }
 
-        // Enqueue tasks for solid blocks
         for (const auto& pair : solid_blocks) {
             results.emplace_back(pool.enqueue([&, pair] {
                 extract_solid_block(archive_file, pair.second, output_dir, no_overwrite, no_verify, files_extracted, files_skipped, bytes_extracted, hash_mismatches, hashes_checked, progress_counter, items_to_process.size(), cout_mutex, raw_output, use_basic_chars, no_preserve_props);

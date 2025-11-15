@@ -1,7 +1,7 @@
 #include <prism/core/archive_reader.h>
 #include <prism/core/logging.h>
 #include <fstream>
-#include <cstring> // Required for memcpy
+#include <cstring>
 
 namespace prism {
 namespace core {
@@ -51,7 +51,7 @@ FileMetadata read_non_solid_file_metadata(std::ifstream& f, uint64_t& current_of
     if (f.gcount() < 4) throw std::runtime_error("Unexpected EOF while reading gid.");
     
     item.data_start_offset = f.tellg();
-    f.seekg(item.compressed_size, std::ios::cur); // Move past data
+    f.seekg(item.compressed_size, std::ios::cur);
     current_offset = f.tellg();
     
     return item;
@@ -68,14 +68,13 @@ std::vector<FileMetadata> read_solid_block_metadata(std::ifstream& f, uint64_t& 
     f.read(metadata_buffer.data(), metadata_size);
     if (f.gcount() < metadata_size) throw std::runtime_error("Unexpected EOF while reading solid block metadata.");
     
-    uint64_t current_data_start_pos = f.tellg(); // Start of the compressed data for this block
+    uint64_t current_data_start_pos = f.tellg();
 
-    // Determine the compressed size of this block
     f.seekg(0, std::ios::end);
     uint64_t end_of_file = f.tellg();
-    f.seekg(current_data_start_pos); // Restore position
+    f.seekg(current_data_start_pos);
 
-    compressed_block_size = end_of_file - current_data_start_pos; // Assume rest of file for now
+    compressed_block_size = end_of_file - current_data_start_pos;
 
     size_t buffer_pos = 0;
     while (buffer_pos < metadata_size) {
@@ -114,15 +113,15 @@ std::vector<FileMetadata> read_solid_block_metadata(std::ifstream& f, uint64_t& 
         
         item.compression_type = block_comp_type;
         item.level = block_level;
-        item.header_start_offset = current_data_start_pos; // Start of the compressed data block
-        item.data_start_offset = uncompressed_offset_counter; // Offset within the uncompressed stream
-        item.compressed_size = compressed_block_size; // Set for all items in this block
+        item.header_start_offset = current_data_start_pos;
+        item.data_start_offset = uncompressed_offset_counter;
+        item.compressed_size = compressed_block_size;
         
         uncompressed_offset_counter += item.file_size;
         block_items.push_back(item);
     }
     
-    f.seekg(current_data_start_pos + compressed_block_size); // Move past data
+    f.seekg(current_data_start_pos + compressed_block_size);
     
     return block_items;
 }
@@ -151,10 +150,9 @@ std::vector<FileMetadata> read_archive_metadata(const std::string& archive_file)
     
     f.read((char*)&flags, 1);
 
-    uint64_t current_file_offset = f.tellg(); // For non-solid
-    uint64_t uncompressed_offset_counter = 0; // For solid
+    uint64_t current_file_offset = f.tellg();
+    uint64_t uncompressed_offset_counter = 0;
 
-    // Read initial block
     if ((flags & SOLID_ARCHIVE_FLAG) != 0) {
         log("Reading initial solid block...", LOG_VERBOSE);
         uint8_t comp_type_val, level_val;
@@ -166,7 +164,7 @@ std::vector<FileMetadata> read_archive_metadata(const std::string& archive_file)
         uint64_t compressed_block_size;
         std::vector<FileMetadata> block_items = read_solid_block_metadata(f, uncompressed_offset_counter, block_comp_type, block_level, compressed_block_size);
         items.insert(items.end(), block_items.begin(), block_items.end());
-        current_file_offset = f.tellg(); // Update for next block check
+        current_file_offset = f.tellg();
     } else {
         log("Reading non-solid archive...", LOG_VERBOSE);
         while (f.peek() != EOF) {
@@ -174,11 +172,10 @@ std::vector<FileMetadata> read_archive_metadata(const std::string& archive_file)
         }
     }
 
-    // Loop for subsequent solid blocks (if any)
     while (f.peek() != EOF) {
         char block_magic[4];
         f.read(block_magic, 4);
-        if (f.gcount() < 4) break; // Reached end of file
+        if (f.gcount() < 4) break;
 
         if (strncmp(block_magic, SOLID_BLOCK_MAGIC, 4) == 0) {
             log("Reading appended solid block...", LOG_VERBOSE);
@@ -191,7 +188,7 @@ std::vector<FileMetadata> read_archive_metadata(const std::string& archive_file)
             uint64_t compressed_block_size;
             std::vector<FileMetadata> block_items = read_solid_block_metadata(f, uncompressed_offset_counter, block_comp_type, block_level, compressed_block_size);
             items.insert(items.end(), block_items.begin(), block_items.end());
-            current_file_offset = f.tellg(); // Update for next block check
+            current_file_offset = f.tellg();
         } else {
             throw std::runtime_error("Corrupted archive: unexpected block type found after initial block.");
         }
@@ -204,7 +201,7 @@ std::vector<FileMetadata> read_archive_metadata(const std::string& archive_file)
 bool is_solid_archive(const std::string& archive_file) {
     std::ifstream f(archive_file, std::ios::binary);
     if (!f) {
-        return false; // Not solid if it doesn't exist or can't be opened
+        return false;
     }
     
     char magic[4];

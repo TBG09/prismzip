@@ -6,7 +6,7 @@
 #include "lz4.h"
 #include "zstd.h"
 #include "brotli.h"
-#include <stdexcept> // Required for std::runtime_error
+#include <stdexcept> 
 
 namespace prism {
 namespace compression {
@@ -16,7 +16,7 @@ std::vector<char> compress_data(const std::vector<char>& data, prism::core::Comp
         case prism::core::CompressionType::NONE:
             return data;
         case prism::core::CompressionType::ZLIB:
-        case prism::core::CompressionType::GZIP: // Gzip uses zlib format internally for this app
+        case prism::core::CompressionType::GZIP: 
             return zlib_compress(data, level);
         case prism::core::CompressionType::BZIP2:
             return bzip2_compress(data, level);
@@ -65,5 +65,5 @@ std::vector<char> decompress_data(const std::vector<char>& data, prism::core::Co
     }
 }
 
-} // namespace compression
-} // namespace prism
+} 
+} 

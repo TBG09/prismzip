@@ -8,10 +8,10 @@
 #include <sstream>
 #include <regex>
 #include <cmath>
-#include <cstdlib> // For realpath
+#include <cstdlib>
 #include <filesystem>
 #include <system_error>
-#include <fcntl.h> // Required for AT_FDCWD
+#include <fcntl.h>
 
 #include <prism/core/logging.h>
 
@@ -65,19 +65,15 @@ bool match_pattern(const std::string& path, const std::string& pattern) {
     log("match_pattern: path='" + path + "', original_pattern='" + pattern + "'", LOG_VERBOSE);
     std::string regex_pattern_str;
     for (char c : pattern) {
-        if (c == '.' || c == '^' || c == '$' || c == '|' || c == '(' || c == ')' ||
+        if (c == '.' || c == '^' || c == ' || c == '|' || c == '(' || c == ')' ||
             c == '[' || c == ']' || c == '{' || c == '}' || c == '*' || c == '+' ||
-            c == '?' || c == '\\') { // Escaping backslash itself
-            regex_pattern_str += '\\'; // Add a literal backslash
+            c == '?' || c == '\\') {
+            regex_pattern_str += '\\';
         }
         regex_pattern_str += c;
     }
 
-    // Convert glob * to regex .*
-    // The regex for matching a literal asterisk is "\\*"
     regex_pattern_str = std::regex_replace(regex_pattern_str, std::regex("\\*"), ".*");
-    // Convert glob ? to regex .
-    // The regex for matching a literal question mark is "\\?"
     regex_pattern_str = std::regex_replace(regex_pattern_str, std::regex("\\?"), ".");
 
     log("match_pattern: generated regex_pattern='" + regex_pattern_str + "'", LOG_VERBOSE);
@@ -90,7 +86,6 @@ bool match_pattern(const std::string& path, const std::string& pattern) {
         return result;
     } catch (const std::regex_error& e) {
         log("match_pattern: regex_error: " + std::string(e.what()), LOG_WARN);
-        // Fallback for invalid regex patterns, treat as simple substring search
         bool result = path.find(pattern) != std::string::npos;
         log("match_pattern: fallback substring search result=" + std::to_string(result), LOG_VERBOSE);
         return result;
@@ -174,14 +169,12 @@ bool get_file_properties(const std::string& path, FileMetadata& metadata) {
         return false;
     }
 
-    // Use st_mtime for modification time
     metadata.modification_time = st.st_mtime;
 
-    // Use st_ctime for creation time (or st_birthtime if available and different)
     #ifdef __APPLE__
         metadata.creation_time = st.st_birthtime;
     #else
-        metadata.creation_time = st.st_ctime; // On Linux, st_ctime is last status change, not creation
+        metadata.creation_time = st.st_ctime;
     #endif
 
     metadata.permissions = st.st_mode;
@@ -192,26 +185,20 @@ bool get_file_properties(const std::string& path, FileMetadata& metadata) {
 }
 
 bool set_file_properties(const std::string& path, const FileMetadata& metadata) {
-    // Set permissions
     if (chmod(path.c_str(), metadata.permissions) != 0) {
         log("Failed to set permissions for file: " + path, LOG_WARN);
-        // Continue, as this might be due to permissions of the current user
     }
 
-    // Set ownership
-    // Only attempt to set ownership if not root and uid/gid are not default (0)
-    // or if the current user is root.
     if (getuid() == 0 || (metadata.uid != 0 && metadata.gid != 0)) {
         if (chown(path.c_str(), metadata.uid, metadata.gid) != 0) {
             log("Failed to set ownership for file: " + path, LOG_WARN);
         }
     }
 
-    // Set modification and access times
     struct timespec times[2];
-    times[0].tv_sec = metadata.modification_time; // Access time (not stored, using modification for both)
+    times[0].tv_sec = metadata.modification_time;
     times[0].tv_nsec = 0;
-    times[1].tv_sec = metadata.modification_time; // Modification time
+    times[1].tv_sec = metadata.modification_time;
     times[1].tv_nsec = 0;
 
     if (utimensat(AT_FDCWD, path.c_str(), times, 0) != 0) {

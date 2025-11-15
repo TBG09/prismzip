@@ -7,7 +7,7 @@
 #include <fstream>
 #include <iostream>
 #include <set>
-#include <cstdio> // For std::rename
+#include <cstdio>
 #include <stdexcept>
 
 namespace prism {
@@ -44,7 +44,6 @@ void remove_from_archive(const std::string& archive_file, const std::vector<std:
         throw std::runtime_error("Could not create temporary archive file.");
     }
 
-    // Write header to temp file
     temp_out.write("PRZM", 4);
     uint16_t version = 1;
     temp_out.write((char*)&version, 2);
@@ -59,7 +58,6 @@ void remove_from_archive(const std::string& archive_file, const std::vector<std:
     for (size_t i = 0; i < items_to_keep.size(); ++i) {
         const auto& item = items_to_keep[i];
         
-        // Create and write new header
         std::vector<char> header = create_archive_header(item.path, item.compression_type, item.level,
                                                        item.hash_type, item.file_hash, item.file_size,
                                                        item.compressed_size, item.creation_time,
@@ -67,7 +65,6 @@ void remove_from_archive(const std::string& archive_file, const std::vector<std:
                                                        item.uid, item.gid);
         temp_out.write(header.data(), header.size());
 
-        // Copy data from original archive
         original_in.seekg(item.data_start_offset);
         std::vector<char> buffer(item.compressed_size);
         original_in.read(buffer.data(), item.compressed_size);
@@ -82,7 +79,6 @@ void remove_from_archive(const std::string& archive_file, const std::vector<std:
     original_in.close();
     temp_out.close();
 
-    // Replace original with temp
     if (std::rename(temp_archive_file.c_str(), archive_file.c_str()) != 0) {
         throw std::runtime_error("Failed to replace original archive with rebuilt one.");
     }

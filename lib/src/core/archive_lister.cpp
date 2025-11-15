@@ -26,7 +26,6 @@ void list_archive(const std::string& archive_file, bool raw_list_mode) {
         std::string comp_name = COMPRESSION_NAMES.at(item.compression_type);
         
         if (raw_list_mode) {
-            // Use std::cout directly for raw output as it's meant for machine consumption
             std::cout << item.path << "\t" << item.file_size << "\t" << comp_name << "\n";
         } else {
             double ratio = 0;
@@ -64,4 +63,3 @@ void list_archive(const std::string& archive_file, bool raw_list_mode) {
 
 } // namespace core
 } // namespace prism
-

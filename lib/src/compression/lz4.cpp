@@ -40,5 +40,5 @@ std::vector<char> lz4_decompress(const std::vector<char>& data, size_t original_
     return result;
 }
 
-} // namespace compression
-} // namespace prism
+} 
+} 

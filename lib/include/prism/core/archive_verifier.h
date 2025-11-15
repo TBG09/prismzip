@@ -12,7 +12,7 @@
 namespace prism {
 namespace core {
 
-void verify_archive(const std::string& archive_file, bool raw_output = false, bool use_basic_chars = false);
+void verify_archive(const std::string& archive_file, bool raw_output = false, bool use_basic_chars = false, bool no_verify = false);
 
 void verify_non_solid_file(const std::string& archive_file, const FileMetadata& item, const std::string& temp_dir, std::atomic<int>& mismatches, std::atomic<int>& checked_files, std::atomic<int>& progress_counter, size_t total_items_to_process, bool raw_output, bool use_basic_chars, std::chrono::steady_clock::time_point start_time);
 

@@ -3,7 +3,7 @@
 #include <prism/core/file_utils.h>
 #include <prism/core/logging.h>
 #include <prism/compression.h>
-#include <prism/hashing/openssl_hasher.h>
+#include <prism/hashing.h>
 #include <prism/core/ui_utils.h>
 #include <fstream>
 #include <iostream>
@@ -17,10 +17,18 @@ namespace fs = std::filesystem;
 namespace prism {
 namespace core {
 
-void verify_non_solid_file(const std::string& archive_file, const FileMetadata& item, const std::string& temp_dir, std::atomic<int>& mismatches, std::atomic<int>& checked_files, std::atomic<int>& progress_counter, size_t total_items_to_process, bool raw_output, bool use_basic_chars, std::chrono::steady_clock::time_point start_time) {
+void verify_non_solid_file(const std::string& archive_file, const FileMetadata& item, const std::string& temp_dir, std::atomic<int>& mismatches, std::atomic<int>& checked_files, std::atomic<int>& progress_counter, size_t total_items_to_process, bool raw_output, bool use_basic_chars, bool no_verify, std::chrono::steady_clock::time_point start_time) {
     if (item.hash_type == HashType::NONE) {
+        log("Debug: Skipping hash verification for '" + item.path + "' (HashType::NONE)", LOG_DEBUG);
         return;
     }
+    log("Debug: Proceeding with hash verification for '" + item.path + "'", LOG_DEBUG);
+
+    log("Debug: Verifying '" + item.path + "':", LOG_DEBUG);
+    log("Debug:   Hash Type: " + HASH_NAMES.at(item.hash_type), LOG_DEBUG);
+    log("Debug:   Compression Type: " + COMPRESSION_NAMES.at(item.compression_type), LOG_DEBUG);
+    log("Debug:   File Size: " + std::to_string(item.file_size), LOG_DEBUG);
+    log("Debug:   Compressed Size: " + std::to_string(item.compressed_size), LOG_DEBUG);
 
     std::string out_path = temp_dir + "/" + item.path + "_" + std::to_string(progress_counter.load());
     
@@ -30,7 +38,9 @@ void verify_non_solid_file(const std::string& archive_file, const FileMetadata& 
         throw std::runtime_error("Cannot open archive for reading: " + archive_file);
     }
     in.seekg(item.data_start_offset);
+    log("Debug:   Reading compressed data from offset: " + std::to_string(item.data_start_offset) + " size: " + std::to_string(item.compressed_size), LOG_DEBUG);
     in.read(compressed_data.data(), item.compressed_size);
+    log("Debug:   Bytes read: " + std::to_string(in.gcount()), LOG_DEBUG);
     in.close();
 
     std::vector<char> decompressed_data = compression::decompress_data(compressed_data, item.compression_type, item.file_size);
@@ -40,10 +50,27 @@ void verify_non_solid_file(const std::string& archive_file, const FileMetadata& 
         log("Could not write temporary file for verification: " + out_path, LOG_WARN);
         return;
     }
+    out_file.write(decompressed_data.data(), decompressed_data.size());
+    out_file.close();
+
+    if (!no_verify && item.hash_type != HashType::NONE) {
+        log("Debug: Incrementing checked_files for '" + item.path + "'", LOG_DEBUG);
+        checked_files++;
+        std::string calculated_hash = prism::hashing::calculate_hash(out_path, item.hash_type);
+        if (calculated_hash != item.file_hash) {
+            mismatches++;
+            log("Hash mismatch for: '" + item.path + "'. Data may be corrupted.", LOG_WARN);
+            log("  - Expected: " + item.file_hash, LOG_WARN);
+            log("  - Got:      " + calculated_hash, LOG_WARN);
+        } else {
+            log("Hash verified for '" + item.path + "'", LOG_VERBOSE);
+        }
+    }
+    
     show_progress_bar(progress_counter.fetch_add(1) + 1, total_items_to_process, item.path, item.file_size, item.compressed_size, start_time, raw_output, use_basic_chars);
 }
 
-void verify_solid_block(const std::string& archive_file, const std::vector<FileMetadata>& block_items, const std::string& temp_dir, std::atomic<int>& mismatches, std::atomic<int>& checked_files, std::atomic<int>& progress_counter, size_t total_items_to_process, bool raw_output, bool use_basic_chars, std::chrono::steady_clock::time_point start_time) {
+void verify_solid_block(const std::string& archive_file, const std::vector<FileMetadata>& block_items, const std::string& temp_dir, std::atomic<int>& mismatches, std::atomic<int>& checked_files, std::atomic<int>& progress_counter, size_t total_items_to_process, bool raw_output, bool use_basic_chars, bool no_verify, std::chrono::steady_clock::time_point start_time) {
     if (block_items.empty()) return;
 
     const FileMetadata& first_item = block_items[0];
@@ -85,7 +112,7 @@ void verify_solid_block(const std::string& archive_file, const std::vector<FileM
         out_file.write(file_data.data(), file_data.size());
         out_file.close();
 
-        std::string calculated_hash = hashing::calculate_hash(out_path, item.hash_type);
+        std::string calculated_hash = prism::hashing::calculate_hash(out_path, item.hash_type);
         checked_files++;
 
         if (calculated_hash != item.file_hash) {
@@ -99,7 +126,7 @@ void verify_solid_block(const std::string& archive_file, const std::vector<FileM
     }
 }
 
-void verify_archive(const std::string& archive_file, bool raw_output, bool use_basic_chars) {
+void verify_archive(const std::string& archive_file, bool raw_output, bool use_basic_chars, bool no_verify) {
     auto start_time = std::chrono::steady_clock::now();
     log("Verifying archive: '" + archive_file + "'", LOG_INFO);
 
@@ -127,7 +154,7 @@ void verify_archive(const std::string& archive_file, bool raw_output, bool use_b
             continue;
         }
 
-        if (item.header_start_offset == item.data_start_offset) {
+        if (!item.is_solid) {
             non_solid_files.push_back(item);
         } else {
             solid_blocks[item.header_start_offset].push_back(item);
@@ -150,14 +177,14 @@ void verify_archive(const std::string& archive_file, bool raw_output, bool use_b
         std::vector<std::future<void>> results;
 
         for (const auto& item : non_solid_files) {
-            results.emplace_back(pool.enqueue([&, item] {
-                verify_non_solid_file(archive_file, item, temp_dir, mismatches, checked_files, progress_counter, total_items_to_process, raw_output, use_basic_chars, start_time);
+            results.emplace_back(pool.enqueue([&, item, no_verify] {
+                verify_non_solid_file(archive_file, item, temp_dir, mismatches, checked_files, progress_counter, total_items_to_process, raw_output, use_basic_chars, no_verify, start_time);
             }));
         }
 
         for (const auto& pair : solid_blocks) {
-            results.emplace_back(pool.enqueue([&, pair] {
-                verify_solid_block(archive_file, pair.second, temp_dir, mismatches, checked_files, progress_counter, total_items_to_process, raw_output, use_basic_chars, start_time);
+            results.emplace_back(pool.enqueue([&, pair, no_verify] {
+                verify_solid_block(archive_file, pair.second, temp_dir, mismatches, checked_files, progress_counter, total_items_to_process, raw_output, use_basic_chars, no_verify, start_time);
             }));
         }
 

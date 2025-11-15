@@ -3,3 +3,6 @@ build/
 
 # Compiled binaries
 app/prismzip
+
+# VS Code files
+.vscode/

@@ -12,6 +12,8 @@ pkg_check_modules(BROTLIENC REQUIRED libbrotlienc)
 pkg_check_modules(BROTLIDEC REQUIRED libbrotlidec)
 pkg_check_modules(SNAPPY REQUIRED snappy)
 pkg_check_modules(LZO REQUIRED lzo2)
+pkg_check_modules(XXHASH REQUIRED libxxhash)
+pkg_check_modules(BLAKE3 REQUIRED libblake3)
 
 # Gather source files
 file(GLOB_RECURSE LIB_SOURCES "src/*.cpp" "src/**/*.cpp" "src/**/**/*.cpp")
@@ -34,6 +36,8 @@ target_link_libraries(prismzip_lib
         ${BROTLIDEC_LIBRARIES}
         ${SNAPPY_LIBRARIES}
         ${LZO_LIBRARIES}
+        ${XXHASH_LIBRARIES}
+        ${BLAKE3_LIBRARIES}
 )
 
 install(TARGETS prismzip_lib

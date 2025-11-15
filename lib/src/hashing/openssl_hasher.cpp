@@ -7,6 +7,7 @@
 
 namespace prism {
 namespace hashing {
+namespace internal { // Wrap in internal namespace
 
 const EVP_MD* get_evp_md(core::HashType hash_type) {
     switch (hash_type) {
@@ -27,49 +28,8 @@ const EVP_MD* get_evp_md(core::HashType hash_type) {
     }
 }
 
-std::string calculate_hash(const std::string& file_path, core::HashType hash_type) {
-    if (hash_type == core::HashType::NONE) return "";
-    
-    core::log("Starting hash calculation for '" + file_path + "'...", core::LOG_VERBOSE);
-    
-    std::ifstream file(file_path, std::ios::binary);
-    if (!file) {
-        core::log("Warning: File not found for hash calculation: '" + file_path + "'", core::LOG_WARN);
-        return "";
-    }
-    
-    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
-    const EVP_MD* md = get_evp_md(hash_type);
-    
-    if (!md) {
-        EVP_MD_CTX_free(ctx);
-        core::log("Warning: Hash type not supported by OpenSSL", core::LOG_WARN);
-        return "";
-    }
-    
-    EVP_DigestInit_ex(ctx, md, nullptr);
-    
-    const size_t CHUNK_SIZE = 5 * 1024 * 1024;
-    char buffer[CHUNK_SIZE];
-    while (file.read(buffer, CHUNK_SIZE) || file.gcount() > 0) {
-        EVP_DigestUpdate(ctx, buffer, file.gcount());
-    }
-    
-    unsigned char hash[EVP_MAX_MD_SIZE];
-    unsigned int hash_len;
-    EVP_DigestFinal_ex(ctx, hash, &hash_len);
-    EVP_MD_CTX_free(ctx);
-    
-    std::stringstream ss;
-    for (unsigned int i = 0; i < hash_len; i++) {
-        ss << std::hex << std::setw(2) << std::setfill('0') << (int)hash[i];
-    }
-    
-    core::log("Finished hash calculation for '" + file_path + "'.", core::LOG_VERBOSE);
-    return ss.str();
-}
-
-std::string calculate_hash_from_data(const std::vector<char>& data, core::HashType hash_type) {
+// Renamed from calculate_hash_from_data
+std::string calculate_openssl_hash_from_data(const std::vector<char>& data, core::HashType hash_type) {
     if (hash_type == core::HashType::NONE || data.empty()) return "";
     
     EVP_MD_CTX* ctx = EVP_MD_CTX_new();
@@ -96,5 +56,31 @@ std::string calculate_hash_from_data(const std::vector<char>& data, core::HashTy
     return ss.str();
 }
 
+// This function is now only a wrapper for calculate_openssl_hash_from_data
+std::string calculate_openssl_hash(const std::string& file_path, core::HashType hash_type) {
+    if (hash_type == core::HashType::NONE) return "";
+    
+    core::log("Starting hash calculation for '" + file_path + "'...", core::LOG_VERBOSE);
+    
+    std::ifstream file(file_path, std::ios::binary | std::ios::ate);
+    if (!file) {
+        core::log("Warning: File not found for hash calculation: '" + file_path + "'", core::LOG_WARN);
+        return "";
+    }
+    std::streamsize size = file.tellg();
+    file.seekg(0, std::ios::beg);
+    std::vector<char> data(size);
+    if (!file.read(data.data(), size)) {
+        core::log("Warning: Could not read file for hash calculation: '" + file_path + "'", core::LOG_WARN);
+        return "";
+    }
+    
+    std::string hash_result = calculate_openssl_hash_from_data(data, hash_type);
+    core::log("Finished hash calculation for '" + file_path + "'.", core::LOG_VERBOSE);
+    return hash_result;
+}
+
+
+} // namespace internal
 } // namespace hashing
 } // namespace prism

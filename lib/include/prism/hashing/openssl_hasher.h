@@ -7,11 +7,14 @@
 
 namespace prism {
 namespace hashing {
+namespace internal {
 
-std::string calculate_hash(const std::string& file_path, prism::core::HashType hash_type);
-std::string calculate_hash_from_data(const std::vector<char>& data, prism::core::HashType hash_type);
+// These functions are now internal and called by the main hashing dispatcher
+std::string calculate_openssl_hash(const std::string& file_path, prism::core::HashType hash_type);
+std::string calculate_openssl_hash_from_data(const std::vector<char>& data, prism::core::HashType hash_type);
 
-} 
-} 
+} // namespace internal
+} // namespace hashing
+} // namespace prism
 
 #endif 

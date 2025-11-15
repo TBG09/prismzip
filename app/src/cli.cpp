@@ -330,6 +330,10 @@ int run_cli(int argc, char* argv[]) {
                     double ratio = 100.0 * (1.0 - (double)create_result.total_compressed_size / create_result.total_uncompressed_size);
                     sumar("    - Ratio: " + std::to_string((int)ratio) + "%");
                 }
+                sumar("  Size Statistics:");
+                sumar("    - Total Header Size: " + core::format_size(create_result.total_header_size) + " (" + std::to_string(static_cast<int>(100.0 * create_result.total_header_size / create_result.total_compressed_size)) + "%)");
+                sumar("      - Metadata Size: " + core::format_size(create_result.total_metadata_size) + " (" + std::to_string(static_cast<int>(100.0 * create_result.total_metadata_size / create_result.total_compressed_size)) + "%)");
+                sumar("    - Total File Data Size: " + core::format_size(create_result.total_file_data_size) + " (" + std::to_string(static_cast<int>(100.0 * create_result.total_file_data_size / create_result.total_compressed_size)) + "%)");
                 sumar("  Thread Durations:");
                 for (size_t i = 0; i < create_result.thread_durations_ms.size(); ++i) {
                     sumar("    - Thread " + std::to_string(i + 1) + ": " + std::to_string(create_result.thread_durations_ms[i]) + " ms");
@@ -419,7 +423,8 @@ int run_cli(int argc, char* argv[]) {
         std::cout << "  -c <type>      Compression: none, zlib, bzip2, lzma, gzip, lz4, zstd, brotli, snappy, lzo, lzma2\n";
         std::cout << "  -l <level>     Compression level 0-9 (default: 9)\n";
         std::cout << "  -H <type>      Hash: none, md5, sha1, sha256, sha512, sha384, blake2b,\n";
-        std::cout << "                 blake2s, sha3-256, sha3-512, ripemd160\n";
+        std::cout << "                 blake2s, sha3-256, sha3-512, ripemd160, whirlpool, sha224,\n";
+        std::cout << "                 sha3-224, sha3-384, xxhash3, xxhash128, crc32, crc64, blake3\n";
         std::cout << "  -s, --solid    Create a solid archive for better compression.\n";
         std::cout << "                 (This may make extraction slow, especially for individual files)\n";
         std::cout << "  -o <dir>       Output directory for extraction (default: .)\n";
@@ -478,7 +483,7 @@ int run_cli(int argc, char* argv[]) {
             std::cout << "  -c <type>       Compression type (default: zlib): none, zlib, bzip2, lzma, gzip, lz4, zstd, brotli, snappy, lzo, lzma2\n";
             std::cout << "  -l <level>      Compression level 0-9 (default: 9)\n";
         std::cout << "  -s, --solid     Create a solid archive for better compression\n";
-            std::cout << "  -H <type>       Hash algorithm for integrity checking\n";
+            std::cout << "  -H <type>       Hash algorithm for integrity checking: none, md5, sha1, sha256, sha512, sha384, blake2b, blake2s, sha3-256, sha3-512, ripemd160, whirlpool, sha224, sha3-224, sha3-384, xxhash3, xxhash128, crc32, crc64, blake3\n";
             std::cout << "  -v              Verbose output\n";
             std::cout << "  -i              Ignore errors\n\n";
             std::cout << "Example:\n";
@@ -493,7 +498,7 @@ int run_cli(int argc, char* argv[]) {
             std::cout << "  -c <type>       Compression type (default: zlib): none, zlib, bzip2, lzma, gzip, lz4, zstd, brotli, snappy, lzo, lzma2\n";
             std::cout << "  -l <level>      Compression level 0-9 (default: 9)\n";
             std::cout << "  -s, --solid     Append as a solid block\n";
-            std::cout << "  -H <type>       Hash algorithm\n";
+            std::cout << "  -H <type>       Hash algorithm: none, md5, sha1, sha256, sha512, sha384, blake2b, blake2s, sha3-256, sha3-512, ripemd160, whirlpool, sha224, sha3-224, sha3-384, xxhash3, xxhash128, crc32, crc64, blake3\n";
             std::cout << "  -v              Verbose output\n";
             std::cout << "  -i              Ignore errors (skip duplicates)\n\n";
             std::cout << "Example:\n";

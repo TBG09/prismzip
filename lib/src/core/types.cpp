@@ -24,7 +24,10 @@ const std::map<std::string, HashType> HASH_MAP = {
     {"blake2s", HashType::BLAKE2S}, {"sha3-256", HashType::SHA3_256},
     {"sha3-512", HashType::SHA3_512}, {"ripemd160", HashType::RIPEMD160},
     {"whirlpool", HashType::WHIRLPOOL}, {"sha224", HashType::SHA224},
-    {"sha3-224", HashType::SHA3_224}, {"sha3-384", HashType::SHA3_384}
+    {"sha3-224", HashType::SHA3_224}, {"sha3-384", HashType::SHA3_384},
+    {"xxhash3", HashType::XXHASH3}, {"xxhash128", HashType::XXHASH128},
+    {"crc32", HashType::CRC32}, {"crc64", HashType::CRC64},
+    {"blake3", HashType::BLAKE3}
 };
 
 const std::map<HashType, std::string> HASH_NAMES = {
@@ -34,7 +37,10 @@ const std::map<HashType, std::string> HASH_NAMES = {
     {HashType::BLAKE2S, "blake2s"}, {HashType::SHA3_256, "sha3-256"},
     {HashType::SHA3_512, "sha3-512"}, {HashType::RIPEMD160, "ripemd160"},
     {HashType::WHIRLPOOL, "whirlpool"}, {HashType::SHA224, "sha224"},
-    {HashType::SHA3_224, "sha3-224"}, {HashType::SHA3_384, "sha3-384"}
+    {HashType::SHA3_224, "sha3-224"}, {HashType::SHA3_384, "sha3-384"},
+    {HashType::XXHASH3, "xxhash3"}, {HashType::XXHASH128, "xxhash128"},
+    {HashType::CRC32, "crc32"}, {HashType::CRC64, "crc64"},
+    {HashType::BLAKE3, "blake3"}
 };
 
 const std::set<std::string> COMPRESSED_EXTENSIONS = {

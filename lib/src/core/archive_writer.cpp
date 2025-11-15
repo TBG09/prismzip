@@ -3,7 +3,7 @@
 #include <prism/core/file_utils.h>
 #include <prism/core/logging.h>
 #include <prism/compression.h>
-#include <prism/hashing/openssl_hasher.h>
+#include <prism/hashing.h>
 #include <prism/core/ui_utils.h>
 #include <prism/core/thread_pool.h>
 #include <fstream>
@@ -24,7 +24,7 @@ namespace fs = std::filesystem;
 namespace prism {
 namespace core {
 
-namespace { // anonymous namespace
+namespace { 
 std::string get_archive_path(const std::string& file_path, const std::vector<std::string>& initial_paths, bool use_full_path) {
     if (use_full_path) {
         return get_absolute_path(file_path);
@@ -217,11 +217,7 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
             all_uncompressed_data.insert(all_uncompressed_data.end(), data.begin(), data.end());
 
-            total_uncompressed_size += data.size();
-
-
-
-                        std::string hash = hashing::calculate_hash(file_path, hash_type);
+                                    std::string hash = prism::hashing::calculate_hash(file_path, hash_type);
 
 
 
@@ -373,7 +369,11 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
 
 
-        return { (long)files_added, total_uncompressed_size, compressed_data.size(), {} };
+        return { (long)files_added, total_uncompressed_size, compressed_data.size(),
+                 (uint64_t)(4 + 2 + 1 + 1 + 1 + 8) + metadata_block.size(), // PRZM + version + flags + comp_type + level + metadata_size_field + metadata_block
+                 metadata_block.size(),
+                 compressed_data.size(),
+                 {} };
 
 
 
@@ -409,23 +409,111 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
         
 
-                std::atomic<int> total_files = 0;
+                                                                        std::atomic<int> total_files = 0;
 
         
 
-                std::atomic<uint64_t> total_uncompressed = 0;
+                
 
         
 
-                std::atomic<uint64_t> total_compressed = 0;
+                                                        
 
         
 
-                std::atomic<int> progress_counter = 0;
+                
 
         
 
-                                auto start_time = std::chrono::steady_clock::now();
+                                                                        std::atomic<uint64_t> total_uncompressed = 0;
+
+        
+
+                
+
+        
+
+                                                        
+
+        
+
+                
+
+        
+
+                                                                        std::atomic<uint64_t> total_compressed = 0;
+
+        
+
+                
+
+        
+
+                                                        
+
+        
+
+                
+
+        
+
+                                                                        std::atomic<uint64_t> total_header_size = 0;
+
+        
+
+                
+
+        
+
+                                                        
+
+        
+
+                
+
+        
+
+                                                                        std::atomic<uint64_t> total_file_data_size = 0;
+
+        
+
+                
+
+        
+
+                                                        
+
+        
+
+                
+
+        
+
+                                                                        std::atomic<uint64_t> total_metadata_size = 0;
+
+        
+
+                
+
+        
+
+                        std::atomic<int> progress_counter = 0;
+
+        
+
+                
+
+        
+
+                        auto start_time = std::chrono::steady_clock::now();
+
+        
+
+                
+
+        
+
+                        
 
         
 
@@ -437,7 +525,15 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
         
 
+                
+
+        
+
                         std::mutex cout_mutex;
+
+        
+
+                
 
         
 
@@ -449,11 +545,27 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
         
 
+                
+
+        
+
+                
+
+        
+
                         {
 
         
 
+                
+
+        
+
                             ThreadPool pool(num_threads);
+
+        
+
+                
 
         
 
@@ -465,19 +577,67 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
         
 
-                            for (const auto& file_path : all_files) {
+                
 
         
 
-                                results.emplace_back(pool.enqueue([&, file_path] {
+                
 
         
 
-                                                        std::string archive_path = get_archive_path(file_path, paths, use_full_path);
+                                                        for (const auto& file_path : all_files) {
+
+        
+
+                
+
+        
+
+                
+
+        
+
+                
 
         
 
                                     
+
+        
+
+                
+
+        
+
+                
+
+        
+
+                
+
+        
+
+                                                            results.emplace_back(pool.enqueue([&, file_path, &total_metadata_size] {
+
+        
+
+                
+
+        
+
+                                    std::string archive_path = get_archive_path(file_path, paths, use_full_path);
+
+        
+
+                
+
+        
+
+                                    
+
+        
+
+                
 
         
 
@@ -485,11 +645,23 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
         
 
+                
+
+        
+
                                     if (actual_comp != comp_type) {
 
         
 
+                
+
+        
+
                                         std::lock_guard<std::mutex> lock(cout_mutex);
+
+        
+
+                
 
         
 
@@ -497,11 +669,23 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
         
 
+                
+
+        
+
                                     }
 
         
 
+                
+
+        
+
                                     
+
+        
+
+                
 
         
 
@@ -509,7 +693,15 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
         
 
+                
+
+        
+
                                     if (!file) {
+
+        
+
+                
 
         
 
@@ -517,7 +709,15 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
         
 
+                
+
+        
+
                                             std::lock_guard<std::mutex> lock(cout_mutex);
+
+        
+
+                
 
         
 
@@ -525,7 +725,15 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
         
 
+                
+
+        
+
                                             return;
+
+        
+
+                
 
         
 
@@ -533,7 +741,15 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
         
 
+                
+
+        
+
                                             throw std::runtime_error("Cannot open file: " + file_path);
+
+        
+
+                
 
         
 
@@ -541,11 +757,23 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
         
 
+                
+
+        
+
                                     }
 
         
 
+                
+
+        
+
                                     
+
+        
+
+                
 
         
 
@@ -553,7 +781,15 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
         
 
+                
+
+        
+
                                     file.close();
+
+        
+
+                
 
         
 
@@ -561,7 +797,15 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
         
 
-                                    std::string hash = hashing::calculate_hash(file_path, hash_type);
+                
+
+        
+
+                                    std::string hash = prism::hashing::calculate_hash(file_path, hash_type);
+
+        
+
+                
 
         
 
@@ -569,11 +813,7 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
         
 
-                                    
-
-        
-
-                                                        
+                
 
         
 
@@ -581,7 +821,127 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
         
 
-                                                        FileMetadata file_props;
+                
+
+        
+
+                                    FileMetadata file_props;
+
+        
+
+                
+
+        
+
+                                    if (!get_file_properties(file_path, file_props)) {
+
+        
+
+                
+
+        
+
+                                        if (ignore_errors) {
+
+        
+
+                
+
+        
+
+                                            std::lock_guard<std::mutex> lock(cout_mutex);
+
+        
+
+                
+
+        
+
+                                            log("Warning: Failed to get properties for file: '" + file_path + "' (ignored)", LOG_WARN);
+
+        
+
+                
+
+        
+
+                                            return;
+
+        
+
+                
+
+        
+
+                                        } else {
+
+        
+
+                
+
+        
+
+                                            throw std::runtime_error("Failed to get properties for file: " + file_path);
+
+        
+
+                
+
+        
+
+                                        }
+
+        
+
+                
+
+        
+
+                                    }
+
+        
+
+                
+
+        
+
+                
+
+        
+
+                
+
+        
+
+                                    std::vector<char> header = create_archive_header(archive_path, actual_comp, level, 
+
+        
+
+                
+
+        
+
+                                                                               hash_type, hash, data.size(), compressed.size(),
+
+        
+
+                
+
+        
+
+                                                                               file_props.creation_time, file_props.modification_time,
+
+        
+
+                
+
+        
+
+                                                                               file_props.permissions, file_props.uid, file_props.gid);
+
+        
+
+                
 
         
 
@@ -589,119 +949,15 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
         
 
-                                                        if (!get_file_properties(file_path, file_props)) {
-
-        
-
-                                    
-
-        
-
-                                                            if (ignore_errors) {
-
-        
-
-                                    
-
-        
-
-                                                                std::lock_guard<std::mutex> lock(cout_mutex);
-
-        
-
-                                    
-
-        
-
-                                                                log("Warning: Failed to get properties for file: '" + file_path + "' (ignored)", LOG_WARN);
-
-        
-
-                                    
-
-        
-
-                                                                return;
-
-        
-
-                                    
-
-        
-
-                                                            } else {
-
-        
-
-                                    
-
-        
-
-                                                                throw std::runtime_error("Failed to get properties for file: " + file_path);
-
-        
-
-                                    
-
-        
-
-                                                            }
-
-        
-
-                                    
-
-        
-
-                                                        }
-
-        
-
-                                    
-
-        
-
-                                    
-
-        
-
-                                    
-
-        
-
-                                                        std::vector<char> header = create_archive_header(archive_path, actual_comp, level, 
-
-        
-
-                                    
-
-        
-
-                                                                                                   hash_type, hash, data.size(), compressed.size(),
-
-        
-
-                                    
-
-        
-
-                                                                                                   file_props.creation_time, file_props.modification_time,
-
-        
-
-                                    
-
-        
-
-                                                                                                   file_props.permissions, file_props.uid, file_props.gid);
-
-        
-
-                                    
+                
 
         
 
                                     {
+
+        
+
+                
 
         
 
@@ -709,7 +965,15 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
         
 
+                
+
+        
+
                                         out.write(header.data(), header.size());
+
+        
+
+                
 
         
 
@@ -717,11 +981,23 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
         
 
+                
+
+        
+
                                     }
 
         
 
+                
+
+        
+
                                     
+
+        
+
+                
 
         
 
@@ -729,7 +1005,15 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
         
 
+                
+
+        
+
                                     total_uncompressed += data.size();
+
+        
+
+                
 
         
 
@@ -737,7 +1021,31 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
         
 
+                
+
+        
+
+                                    total_header_size += header.size();
+
+        
+
+                
+
+        
+
+                                    total_file_data_size += compressed.size();
+
+        
+
+                
+
+        
+
                                     
+
+        
+
+                
 
         
 
@@ -745,7 +1053,15 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
         
 
+                
+
+        
+
                                         std::lock_guard<std::mutex> lock(cout_mutex);
+
+        
+
+                
 
         
 
@@ -753,11 +1069,23 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
         
 
+                
+
+        
+
                                     }
 
         
 
+                
+
+        
+
                                 }));
+
+        
+
+                
 
         
 
@@ -767,45 +1095,161 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
                 
 
+        
 
-
-            for(auto && result : results)
-
-                result.get();
-
-            
-
-            durations_ms = pool.get_thread_durations();
-
-        }
+                
 
         
 
-        if (total_files > 0 && !raw_output) std::cout << std::endl;
+                
 
         
 
-        log("Successfully created archive '" + archive_file + "'", LOG_SUCCESS);
-
-        log("Items added: " + std::to_string(total_files.load()) + " files", LOG_SUM);
-
-        log("Total uncompressed data: " + format_size(total_uncompressed.load()), LOG_SUM);
-
-        log("Total compressed data: " + format_size(total_compressed.load()), LOG_SUM);
+                            for(auto && result : results)
 
         
 
-        if (total_uncompressed > 0) {
-
-            double ratio = 100.0 * (1.0 - (double)total_compressed.load() / total_uncompressed.load());
-
-            log("Compression ratio: " + std::to_string((int)ratio) + "%", LOG_SUM);
-
-        }
+                
 
         
 
-        return {total_files.load(), total_uncompressed.load(), total_compressed.load(), durations_ms};
+                                result.get();
+
+        
+
+                
+
+        
+
+                            
+
+        
+
+                
+
+        
+
+                            durations_ms = pool.get_thread_durations();
+
+        
+
+                
+
+        
+
+                        }
+
+        
+
+                
+
+        
+
+                        
+
+        
+
+                
+
+        
+
+                        if (total_files > 0 && !raw_output) std::cout << std::endl;
+
+        
+
+                
+
+        
+
+                        
+
+        
+
+                
+
+        
+
+                        log("Successfully created archive '" + archive_file + "'", LOG_SUCCESS);
+
+        
+
+                
+
+        
+
+                        log("Items added: " + std::to_string(total_files.load()) + " files", LOG_SUM);
+
+        
+
+                
+
+        
+
+                        log("Total uncompressed data: " + format_size(total_uncompressed.load()), LOG_SUM);
+
+        
+
+                
+
+        
+
+                        log("Total compressed data: " + format_size(total_compressed.load()), LOG_SUM);
+
+        
+
+                
+
+        
+
+                        
+
+        
+
+                
+
+        
+
+                        if (total_uncompressed > 0) {
+
+        
+
+                
+
+        
+
+                            double ratio = 100.0 * (1.0 - (double)total_compressed.load() / total_uncompressed.load());
+
+        
+
+                
+
+        
+
+                            log("Compression ratio: " + std::to_string((int)ratio) + "%", LOG_SUM);
+
+        
+
+                
+
+        
+
+                        }
+
+        
+
+                
+
+        
+
+                        
+
+        
+
+                
+
+        
+
+        return {total_files.load(), total_uncompressed.load(), total_compressed.load(), total_header_size.load(), total_metadata_size.load(), total_file_data_size.load(), durations_ms};
 
     }
 
@@ -896,8 +1340,7 @@ ArchiveCreationResult append_to_archive(const std::string& archive_file, const s
             all_uncompressed_data.insert(all_uncompressed_data.end(), data.begin(), data.end());
             total_uncompressed_size += data.size();
 
-            std::string hash = hashing::calculate_hash(file_path, hash_type);
-            
+                                std::string hash = prism::hashing::calculate_hash(file_path, hash_type);            
             FileMetadata file_props;
             if (!get_file_properties(file_path, file_props)) {
                 if (ignore_errors) {
@@ -945,7 +1388,11 @@ ArchiveCreationResult append_to_archive(const std::string& archive_file, const s
         log("Total uncompressed data: " + format_size(total_uncompressed_size), LOG_SUM);
         log("Total compressed data: " + format_size(compressed_data.size()), LOG_SUM);
 
-        return {(long)files_added, total_uncompressed_size, compressed_data.size(), {}};
+        return {(long)files_added, total_uncompressed_size, compressed_data.size(),
+                (uint64_t)(4 + 1 + 1 + 8) + metadata_block.size(), // SOLID_BLOCK_MAGIC + comp_type + level + metadata_size_field + metadata_block
+                metadata_block.size(),
+                compressed_data.size(),
+                {}};
 
     } else {
         std::vector<FileMetadata> existing_items = read_archive_metadata(archive_file);
@@ -964,6 +1411,9 @@ ArchiveCreationResult append_to_archive(const std::string& archive_file, const s
         std::atomic<int> total_files = 0;
         std::atomic<uint64_t> total_uncompressed = 0;
         std::atomic<uint64_t> total_compressed = 0;
+        std::atomic<uint64_t> total_header_size = 0;
+        std::atomic<uint64_t> total_file_data_size = 0;
+        std::atomic<uint64_t> total_metadata_size = 0;
         auto start_time = std::chrono::steady_clock::now();
         std::atomic<int> progress_counter = 0;
 
@@ -976,7 +1426,7 @@ ArchiveCreationResult append_to_archive(const std::string& archive_file, const s
             std::vector<std::future<void>> results;
 
             for (const auto& file_path : all_files) {
-                results.emplace_back(pool.enqueue([&, file_path] {
+                results.emplace_back(pool.enqueue([&, file_path, &total_metadata_size] {
                     std::string archive_path = get_archive_path(file_path, paths, use_full_path);
 
                     if (existing_paths.count(archive_path)) {
@@ -1005,7 +1455,7 @@ ArchiveCreationResult append_to_archive(const std::string& archive_file, const s
                     std::vector<char> data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
                     file.close();
                     
-                    std::string hash = hashing::calculate_hash(file_path, hash_type);
+                    std::string hash = prism::hashing::calculate_hash(file_path, hash_type);
                     std::vector<char> compressed = compression::compress_data(data, actual_comp, level);
                     
                     
@@ -1034,6 +1484,20 @@ ArchiveCreationResult append_to_archive(const std::string& archive_file, const s
                     total_files++;
                     total_uncompressed += data.size();
                     total_compressed += compressed.size();
+                    total_header_size += header.size();
+                    total_file_data_size += compressed.size();
+                    total_metadata_size.fetch_add(sizeof(uint32_t) + archive_path.size() + // path_len + archive_path
+                                           sizeof(uint8_t) + // compression_type
+                                           sizeof(uint8_t) + // level
+                                           sizeof(uint8_t) + // hash_type
+                                           sizeof(uint16_t) + hash.size() + // hash_len + file_hash
+                                           sizeof(uint64_t) + // file_size
+                                           sizeof(uint64_t) + // compressed_size
+                                           sizeof(uint64_t) + // creation_time
+                                           sizeof(uint64_t) + // modification_time
+                                           sizeof(uint32_t) + // permissions
+                                           sizeof(uint32_t) + // uid
+                                           sizeof(uint32_t)); // gid
                     
                     {
                         std::lock_guard<std::mutex> lock(cout_mutex);
@@ -1055,7 +1519,7 @@ ArchiveCreationResult append_to_archive(const std::string& archive_file, const s
         log("Total uncompressed data: " + format_size(total_uncompressed.load()), LOG_SUM);
         log("Total compressed data: " + format_size(total_compressed.load()), LOG_SUM);
 
-        return {total_files.load(), total_uncompressed.load(), total_compressed.load(), durations_ms};
+        return {total_files.load(), total_uncompressed.load(), total_compressed.load(), total_header_size.load(), total_metadata_size.load(), total_file_data_size.load(), durations_ms};
     }
 }
 

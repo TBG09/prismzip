@@ -56,6 +56,11 @@ FileMetadata read_non_solid_file_metadata(std::ifstream& f, uint64_t& current_of
     current_offset = f.tellg();
     item.is_solid = false;
     
+    log("Debug: Read metadata for '" + item.path + "':", LOG_DEBUG);
+    log("Debug:   Compression Type: " + COMPRESSION_NAMES.at(item.compression_type), LOG_DEBUG);
+    log("Debug:   File Size: " + std::to_string(item.file_size), LOG_DEBUG);
+    log("Debug:   Compressed Size: " + std::to_string(item.compressed_size), LOG_DEBUG);
+    
     return item;
 }
 

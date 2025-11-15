@@ -3,7 +3,7 @@
 #include <prism/core/file_utils.h>
 #include <prism/core/logging.h>
 #include <prism/compression.h>
-#include <prism/hashing/openssl_hasher.h>
+#include <prism/hashing.h>
 #include <prism/core/thread_pool.h>
 #include <prism/core/ui_utils.h>
 #include <fstream>

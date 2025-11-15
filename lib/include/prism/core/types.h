@@ -39,7 +39,12 @@ enum class HashType : uint8_t {
     WHIRLPOOL = 11,
     SHA224 = 12,
     SHA3_224 = 13,
-    SHA3_384 = 14
+    SHA3_384 = 14,
+    XXHASH3 = 15,
+    XXHASH128 = 16,
+    CRC32 = 17,
+    CRC64 = 18,
+    BLAKE3 = 19
 };
 
 const uint8_t SOLID_ARCHIVE_FLAG = 0x01;

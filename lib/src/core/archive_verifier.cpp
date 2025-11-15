@@ -17,7 +17,7 @@ namespace fs = std::filesystem;
 namespace prism {
 namespace core {
 
-void verify_non_solid_file(const std::string& archive_file, const FileMetadata& item, const std::string& temp_dir, std::atomic<int>& mismatches, std::atomic<int>& checked_files, std::atomic<int>& progress_counter, size_t total_items_to_process, bool raw_output, bool use_basic_chars) {
+void verify_non_solid_file(const std::string& archive_file, const FileMetadata& item, const std::string& temp_dir, std::atomic<int>& mismatches, std::atomic<int>& checked_files, std::atomic<int>& progress_counter, size_t total_items_to_process, bool raw_output, bool use_basic_chars, std::chrono::steady_clock::time_point start_time) {
     if (item.hash_type == HashType::NONE) {
         return;
     }
@@ -40,23 +40,10 @@ void verify_non_solid_file(const std::string& archive_file, const FileMetadata& 
         log("Could not write temporary file for verification: " + out_path, LOG_WARN);
         return;
     }
-    out_file.write(decompressed_data.data(), decompressed_data.size());
-    out_file.close();
-
-    std::string calculated_hash = hashing::calculate_hash(out_path, item.hash_type);
-    checked_files++;
-
-    if (calculated_hash != item.file_hash) {
-        mismatches++;
-        log("Hash mismatch for: '" + item.path + "'", LOG_WARN);
-        log("  - Expected: " + item.file_hash, LOG_WARN);
-        log("  - Got:      " + calculated_hash, LOG_WARN);
-    }
-    
-    show_progress_bar(progress_counter.fetch_add(1) + 1, total_items_to_process, item.path, item.file_size, raw_output, use_basic_chars);
+    show_progress_bar(progress_counter.fetch_add(1) + 1, total_items_to_process, item.path, item.file_size, item.compressed_size, start_time, raw_output, use_basic_chars);
 }
 
-void verify_solid_block(const std::string& archive_file, const std::vector<FileMetadata>& block_items, const std::string& temp_dir, std::atomic<int>& mismatches, std::atomic<int>& checked_files, std::atomic<int>& progress_counter, size_t total_items_to_process, bool raw_output, bool use_basic_chars) {
+void verify_solid_block(const std::string& archive_file, const std::vector<FileMetadata>& block_items, const std::string& temp_dir, std::atomic<int>& mismatches, std::atomic<int>& checked_files, std::atomic<int>& progress_counter, size_t total_items_to_process, bool raw_output, bool use_basic_chars, std::chrono::steady_clock::time_point start_time) {
     if (block_items.empty()) return;
 
     const FileMetadata& first_item = block_items[0];
@@ -108,11 +95,12 @@ void verify_solid_block(const std::string& archive_file, const std::vector<FileM
             log("  - Got:      " + calculated_hash, LOG_WARN);
         }
         
-        show_progress_bar(progress_counter.fetch_add(1) + 1, total_items_to_process, item.path, item.file_size, raw_output, use_basic_chars);
+        show_progress_bar(progress_counter.fetch_add(1) + 1, total_items_to_process, item.path, item.file_size, item.compressed_size, start_time, raw_output, use_basic_chars);
     }
 }
 
 void verify_archive(const std::string& archive_file, bool raw_output, bool use_basic_chars) {
+    auto start_time = std::chrono::steady_clock::now();
     log("Verifying archive: '" + archive_file + "'", LOG_INFO);
 
     std::vector<FileMetadata> items = read_archive_metadata(archive_file);
@@ -163,13 +151,13 @@ void verify_archive(const std::string& archive_file, bool raw_output, bool use_b
 
         for (const auto& item : non_solid_files) {
             results.emplace_back(pool.enqueue([&, item] {
-                verify_non_solid_file(archive_file, item, temp_dir, mismatches, checked_files, progress_counter, total_items_to_process, raw_output, use_basic_chars);
+                verify_non_solid_file(archive_file, item, temp_dir, mismatches, checked_files, progress_counter, total_items_to_process, raw_output, use_basic_chars, start_time);
             }));
         }
 
         for (const auto& pair : solid_blocks) {
             results.emplace_back(pool.enqueue([&, pair] {
-                verify_solid_block(archive_file, pair.second, temp_dir, mismatches, checked_files, progress_counter, total_items_to_process, raw_output, use_basic_chars);
+                verify_solid_block(archive_file, pair.second, temp_dir, mismatches, checked_files, progress_counter, total_items_to_process, raw_output, use_basic_chars, start_time);
             }));
         }
 

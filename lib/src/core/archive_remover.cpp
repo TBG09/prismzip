@@ -70,7 +70,7 @@ void remove_from_archive(const std::string& archive_file, const std::vector<std:
         original_in.read(buffer.data(), item.compressed_size);
         temp_out.write(buffer.data(), buffer.size());
         
-        show_progress_bar(i + 1, items_to_keep.size(), item.path, item.file_size, raw_output, use_basic_chars);
+        show_progress_bar(i + 1, items_to_keep.size(), item.path, item.file_size, 0, std::chrono::steady_clock::now(), raw_output, use_basic_chars);
     }
     if (!items_to_keep.empty() && !raw_output) {
         std::cout << std::endl;

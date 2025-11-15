@@ -6,6 +6,7 @@
 #include <prism/core/archive_writer.h>
 #include <prism/core/archive_remover.h>
 #include <prism/core/archive_verifier.h>
+#include <prism/core/archive_propertier.h>
 #include <prism/core/result_types.h>
 #include <prism/core/file_utils.h>
 #include <iostream>
@@ -25,6 +26,7 @@ bool color_en = true;
 bool is_extra_info_en = false;
 bool is_raw_output_en = false;
 bool use_basic_chars = false;
+bool is_detailed_en = false;
 
 const std::string COLOR_RESET = "\033[0m";
 const std::string COLOR_RED = "\033[91m";
@@ -172,6 +174,8 @@ int run_cli(int argc, char* argv[]) {
                 is_raw_output_en = true;
             } else if (arg == "--basic-chars") {
                 use_basic_chars = true;
+            } else if (arg == "--detailed") {
+                is_detailed_en = true;
             } else if (arg == "-s" || arg == "--solid") {
                 solid_mode = true;
             } else if (arg == "--full") {
@@ -217,6 +221,8 @@ int run_cli(int argc, char* argv[]) {
             }
         }
         
+        core::set_progress_bar_detailed(is_detailed_en);
+        
         std::any result;
     
         try {
@@ -228,8 +234,12 @@ int run_cli(int argc, char* argv[]) {
                 result = core::append_to_archive(archive_file, paths, comp_type, comp_level, hash_type, ignore_errors, exclude_patterns, use_full_path, auto_yes, num_threads, is_raw_output_en, use_basic_chars, solid_mode);
             } else if (command == "list") {
                 core::list_archive(archive_file, false); 
-                    } else if (command == "extract") {
-                        result = core::extract_archive(archive_file, output_dir, paths, no_overwrite, no_verify, num_threads, is_raw_output_en, use_basic_chars, no_preserve_props);            } else if (command == "remove") {
+            } else if (command == "prop") {
+                if (paths.empty()) { print_command_help("prop"); return 1; }
+                core::get_properties(archive_file, paths[0], auto_yes);
+            } else if (command == "extract") {
+                result = core::extract_archive(archive_file, output_dir, paths, no_overwrite, no_verify, num_threads, is_raw_output_en, use_basic_chars, no_preserve_props);
+            } else if (command == "remove") {
                 if (paths.empty()) { print_command_help("remove"); return 1; }
                 core::remove_from_archive(archive_file, paths, ignore_errors, is_raw_output_en, use_basic_chars);
             } else if (command == "verify") {
@@ -389,6 +399,7 @@ int run_cli(int argc, char* argv[]) {
         std::cout << "  create     Create a new archive\n";
         std::cout << "  append     Append files to existing archive\n";
         std::cout << "  list       List archive contents\n";
+        std::cout << "  prop       Get properties of a file in an archive\n";
         std::cout << "  extract    Extract files from archive\n";
         std::cout << "  remove     Remove files from archive\n";
         std::cout << "  verify     Verify archive integrity\n\n";
@@ -410,6 +421,7 @@ int run_cli(int argc, char* argv[]) {
         std::cout << "  --no-color     Disable colored output\n";
         std::cout << "  --extra        Display extra information after operation\n";
         std::cout << "  --raw          Display raw, machine-readable output\n";
+        std::cout << "  --detailed     Display a more detailed progress bar\n";
         std::cout << "  --basic-chars  Use basic characters for progress bar\n\n";
         
         
@@ -513,6 +525,16 @@ int run_cli(int argc, char* argv[]) {
             std::cout << "  -v              Verbose output\n\n";
             std::cout << "Example:\n";
             std::cout << "  prismzip list backup.przm\n\n";
+        } else if (command == "prop") {
+            std::cout << "Usage: prismzip prop <archive_file> <path_in_archive> [options]\n\n";
+            std::cout << "Get properties of a file or folder in an archive.\n\n";
+            std::cout << "Required:\n";
+            std::cout << "  <archive_file>     Archive file to inspect\n";
+            std::cout << "  <path_in_archive>  Path to the file/folder inside the archive\n\n";
+            std::cout << "Options:\n";
+            std::cout << "  -y                 Auto-yes to prompts (for solid archives)\n\n";
+            std::cout << "Example:\n";
+            std::cout << "  prismzip prop backup.przm folder/file.txt\n\n";
         } else if (command == "verify") {
             std::cout << "Usage: prismzip verify <archive_file> [options]\n\n";
             std::cout << "Verify integrity of an archive.\n\n";

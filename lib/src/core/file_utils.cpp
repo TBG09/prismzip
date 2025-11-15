@@ -65,7 +65,7 @@ bool match_pattern(const std::string& path, const std::string& pattern) {
     log("match_pattern: path='" + path + "', original_pattern='" + pattern + "'", LOG_VERBOSE);
     std::string regex_pattern_str;
     for (char c : pattern) {
-        if (c == '.' || c == '^' || c == ' || c == '|' || c == '(' || c == ')' ||
+        if (c == '.' || c == '^' || c == '$' || c == '|' || c == '(' || c == ')' ||
             c == '[' || c == ']' || c == '{' || c == '}' || c == '*' || c == '+' ||
             c == '?' || c == '\\') {
             regex_pattern_str += '\\';

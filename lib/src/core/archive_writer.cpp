@@ -175,15 +175,17 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
         std::vector<char> all_uncompressed_data;
 
-        std::vector<char> metadata_block;
+                std::vector<char> metadata_block;
 
-        uint64_t total_uncompressed_size = 0;
+                uint64_t total_uncompressed_size = 0;
 
-        int files_added = 0;
+                int files_added = 0;
 
+                auto start_time = std::chrono::steady_clock::now();
 
+        
 
-        for (const auto& file_path : all_files) {
+                for (const auto& file_path : all_files) {
 
                         std::string archive_path = get_archive_path(file_path, paths, use_full_path);
 
@@ -283,7 +285,7 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
             files_added++;
 
-            show_progress_bar(files_added, all_files.size(), archive_path, data.size(), raw_output, use_basic_chars);
+            show_progress_bar(files_added, all_files.size(), archive_path, data.size(), 0, start_time, raw_output, use_basic_chars);
 
         }
 
@@ -399,185 +401,371 @@ ArchiveCreationResult create_archive(const std::string& archive_file, const std:
 
         
 
-        log("Created archive file named '" + archive_file + "' using " + std::to_string(num_threads) + " threads.", LOG_INFO);
+                log("Created archive file named '" + archive_file + "' using " + std::to_string(num_threads) + " threads.", LOG_INFO);
 
         
 
-        std::atomic<int> total_files = 0;
+                
 
-        std::atomic<uint64_t> total_uncompressed = 0;
+        
 
-        std::atomic<uint64_t> total_compressed = 0;
+                std::atomic<int> total_files = 0;
 
-        std::atomic<int> progress_counter = 0;
+        
 
+                std::atomic<uint64_t> total_uncompressed = 0;
 
+        
 
-        std::mutex out_mutex;
+                std::atomic<uint64_t> total_compressed = 0;
 
-        std::mutex cout_mutex;
+        
 
-        std::vector<long long> durations_ms;
+                std::atomic<int> progress_counter = 0;
 
+        
 
+                                auto start_time = std::chrono::steady_clock::now();
 
-        {
+        
 
-            ThreadPool pool(num_threads);
+                
 
-            std::vector<std::future<void>> results;
+        
 
+                        std::mutex out_mutex;
 
+        
 
-            for (const auto& file_path : all_files) {
+                        std::mutex cout_mutex;
 
-                results.emplace_back(pool.enqueue([&, file_path] {
+        
 
-                                        std::string archive_path = get_archive_path(file_path, paths, use_full_path);
+                        std::vector<long long> durations_ms;
 
-                    
+        
 
-                    CompressionType actual_comp = should_compress(file_path, comp_type) ? comp_type : CompressionType::NONE;
+                
 
-                    if (actual_comp != comp_type) {
+        
 
-                        std::lock_guard<std::mutex> lock(cout_mutex);
+                        {
 
-                        log("Skipping compression for already compressed file '" + file_path + "'", LOG_VERBOSE);
+        
 
-                    }
+                            ThreadPool pool(num_threads);
 
-                    
+        
 
-                    std::ifstream file(file_path, std::ios::binary);
+                            std::vector<std::future<void>> results;
 
-                    if (!file) {
+        
 
-                        if (ignore_errors) {
+                
 
-                            std::lock_guard<std::mutex> lock(cout_mutex);
+        
 
-                            log("Warning: Cannot open file: '" + file_path + "' (ignored)", LOG_WARN);
+                            for (const auto& file_path : all_files) {
 
-                            return;
+        
 
-                        } else {
+                                results.emplace_back(pool.enqueue([&, file_path] {
 
-                            throw std::runtime_error("Cannot open file: " + file_path);
+        
 
-                        }
+                                                        std::string archive_path = get_archive_path(file_path, paths, use_full_path);
 
-                    }
+        
 
-                    
+                                    
 
-                    std::vector<char> data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        
 
-                    file.close();
+                                    CompressionType actual_comp = should_compress(file_path, comp_type) ? comp_type : CompressionType::NONE;
 
-                    
+        
 
-                    std::string hash = hashing::calculate_hash(file_path, hash_type);
+                                    if (actual_comp != comp_type) {
 
-                    std::vector<char> compressed = compression::compress_data(data, actual_comp, level);
+        
 
-                    
+                                        std::lock_guard<std::mutex> lock(cout_mutex);
 
-                                        
+        
 
-                    
+                                        log("Skipping compression for already compressed file '" + file_path + "'", LOG_VERBOSE);
 
-                                        FileMetadata file_props;
+        
 
-                    
+                                    }
 
-                                        if (!get_file_properties(file_path, file_props)) {
+        
 
-                    
+                                    
 
-                                            if (ignore_errors) {
+        
 
-                    
+                                    std::ifstream file(file_path, std::ios::binary);
 
-                                                std::lock_guard<std::mutex> lock(cout_mutex);
+        
 
-                    
+                                    if (!file) {
 
-                                                log("Warning: Failed to get properties for file: '" + file_path + "' (ignored)", LOG_WARN);
+        
 
-                    
+                                        if (ignore_errors) {
 
-                                                return;
+        
 
-                    
+                                            std::lock_guard<std::mutex> lock(cout_mutex);
 
-                                            } else {
+        
 
-                    
+                                            log("Warning: Cannot open file: '" + file_path + "' (ignored)", LOG_WARN);
 
-                                                throw std::runtime_error("Failed to get properties for file: " + file_path);
+        
 
-                    
+                                            return;
 
-                                            }
+        
 
-                    
+                                        } else {
+
+        
+
+                                            throw std::runtime_error("Cannot open file: " + file_path);
+
+        
 
                                         }
 
-                    
+        
 
-                    
+                                    }
 
-                    
+        
 
-                                        std::vector<char> header = create_archive_header(archive_path, actual_comp, level, 
+                                    
 
-                    
+        
 
-                                                                                   hash_type, hash, data.size(), compressed.size(),
+                                    std::vector<char> data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 
-                    
+        
 
-                                                                                   file_props.creation_time, file_props.modification_time,
+                                    file.close();
 
-                    
+        
 
-                                                                                   file_props.permissions, file_props.uid, file_props.gid);
+                                    
 
-                    
+        
 
-                    {
+                                    std::string hash = hashing::calculate_hash(file_path, hash_type);
 
-                        std::lock_guard<std::mutex> lock(out_mutex);
+        
 
-                        out.write(header.data(), header.size());
+                                    std::vector<char> compressed = compression::compress_data(data, actual_comp, level);
 
-                        out.write(compressed.data(), compressed.size());
+        
 
-                    }
+                                    
 
-                    
+        
 
-                    total_files++;
+                                                        
 
-                    total_uncompressed += data.size();
+        
 
-                    total_compressed += compressed.size();
+                                    
 
-                    
+        
 
-                    {
+                                                        FileMetadata file_props;
 
-                        std::lock_guard<std::mutex> lock(cout_mutex);
+        
 
-                        show_progress_bar(++progress_counter, all_files.size(), archive_path, data.size(), raw_output, use_basic_chars);
+                                    
 
-                    }
+        
 
-                }));
+                                                        if (!get_file_properties(file_path, file_props)) {
 
-            }
+        
+
+                                    
+
+        
+
+                                                            if (ignore_errors) {
+
+        
+
+                                    
+
+        
+
+                                                                std::lock_guard<std::mutex> lock(cout_mutex);
+
+        
+
+                                    
+
+        
+
+                                                                log("Warning: Failed to get properties for file: '" + file_path + "' (ignored)", LOG_WARN);
+
+        
+
+                                    
+
+        
+
+                                                                return;
+
+        
+
+                                    
+
+        
+
+                                                            } else {
+
+        
+
+                                    
+
+        
+
+                                                                throw std::runtime_error("Failed to get properties for file: " + file_path);
+
+        
+
+                                    
+
+        
+
+                                                            }
+
+        
+
+                                    
+
+        
+
+                                                        }
+
+        
+
+                                    
+
+        
+
+                                    
+
+        
+
+                                    
+
+        
+
+                                                        std::vector<char> header = create_archive_header(archive_path, actual_comp, level, 
+
+        
+
+                                    
+
+        
+
+                                                                                                   hash_type, hash, data.size(), compressed.size(),
+
+        
+
+                                    
+
+        
+
+                                                                                                   file_props.creation_time, file_props.modification_time,
+
+        
+
+                                    
+
+        
+
+                                                                                                   file_props.permissions, file_props.uid, file_props.gid);
+
+        
+
+                                    
+
+        
+
+                                    {
+
+        
+
+                                        std::lock_guard<std::mutex> lock(out_mutex);
+
+        
+
+                                        out.write(header.data(), header.size());
+
+        
+
+                                        out.write(compressed.data(), compressed.size());
+
+        
+
+                                    }
+
+        
+
+                                    
+
+        
+
+                                    total_files++;
+
+        
+
+                                    total_uncompressed += data.size();
+
+        
+
+                                    total_compressed += compressed.size();
+
+        
+
+                                    
+
+        
+
+                                    {
+
+        
+
+                                        std::lock_guard<std::mutex> lock(cout_mutex);
+
+        
+
+                                        show_progress_bar(++progress_counter, all_files.size(), archive_path, data.size(), compressed.size(), start_time, raw_output, use_basic_chars);
+
+        
+
+                                    }
+
+        
+
+                                }));
+
+        
+
+                            }
+
+        
+
+                
 
 
 
@@ -679,6 +867,7 @@ ArchiveCreationResult append_to_archive(const std::string& archive_file, const s
         std::vector<char> metadata_block;
         uint64_t total_uncompressed_size = 0;
         int files_added = 0;
+        auto start_time = std::chrono::steady_clock::now();
 
         for (const auto& file_path : all_files) {
             std::string archive_path = get_archive_path(file_path, paths, use_full_path);
@@ -723,9 +912,8 @@ ArchiveCreationResult append_to_archive(const std::string& archive_file, const s
                                                                          file_props.creation_time, file_props.modification_time,
                                                                          file_props.permissions, file_props.uid, file_props.gid);
             metadata_block.insert(metadata_block.end(), file_metadata.begin(), file_metadata.end());
-            
             files_added++;
-            show_progress_bar(files_added, all_files.size(), archive_path, data.size(), raw_output, use_basic_chars);
+            show_progress_bar(files_added, all_files.size(), archive_path, data.size(), 0, start_time, raw_output, use_basic_chars);
         }
 
         if (files_added > 0 && !raw_output) std::cout << std::endl;
@@ -776,6 +964,7 @@ ArchiveCreationResult append_to_archive(const std::string& archive_file, const s
         std::atomic<int> total_files = 0;
         std::atomic<uint64_t> total_uncompressed = 0;
         std::atomic<uint64_t> total_compressed = 0;
+        auto start_time = std::chrono::steady_clock::now();
         std::atomic<int> progress_counter = 0;
 
         std::mutex out_mutex;
@@ -848,7 +1037,7 @@ ArchiveCreationResult append_to_archive(const std::string& archive_file, const s
                     
                     {
                         std::lock_guard<std::mutex> lock(cout_mutex);
-                        show_progress_bar(++progress_counter, all_files.size(), archive_path, data.size(), raw_output, use_basic_chars);
+                        show_progress_bar(++progress_counter, all_files.size(), archive_path, data.size(), compressed.size(), start_time, raw_output, use_basic_chars);
                     }
                 }));
             }

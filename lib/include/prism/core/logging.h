@@ -23,6 +23,8 @@ void set_log_handler(LogHandler handler);
 
 void log(const std::string& msg, LogLevel level = LOG_INFO);
 
+void set_progress_bar_detailed(bool detailed);
+
 } 
 } 
 

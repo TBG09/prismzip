@@ -3,11 +3,13 @@
 
 #include <string>
 #include <cstdint>
+#include <chrono>
 
 namespace prism {
 namespace core {
 
-void show_progress_bar(int current, int total, const std::string& file_path, uint64_t file_size, bool raw_output = false, bool use_basic_chars = false);
+void show_progress_bar(int current, int total, const std::string& file_path, uint64_t file_size, uint64_t compressed_size, std::chrono::steady_clock::time_point start_time, bool raw_output = false, bool use_basic_chars = false);
+void set_progress_bar_detailed(bool detailed);
 bool confirm_action(const std::string& message, bool auto_yes);
 
 }

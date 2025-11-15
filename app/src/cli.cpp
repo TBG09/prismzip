@@ -107,6 +107,11 @@ void cli_log_handler(const std::string& msg, int level) {
     }
 }
 
+void print_version() {
+    std::cout << "Version: 1.1 build 240" << std::endl;
+    std::cout << "Archive format Version: 2" << std::endl;
+}
+
 void print_usage();
 void print_command_help(const std::string& command);
 void print_extra_info(const std::string& command, int num_threads, core::CompressionType comp_type, int comp_level, core::HashType hash_type, const std::any& result);
@@ -126,8 +131,13 @@ int run_cli(int argc, char* argv[]) {
         print_usage();
         return 0;
     }
+
+    if (command == "version") {
+        print_version();
+        return 0;
+    }
     
-    if (argc < 3 && command != "help") {
+    if (argc < 3 && command != "help" && command != "version") {
         print_command_help(command);
         return 1;
     }
@@ -402,10 +412,11 @@ int run_cli(int argc, char* argv[]) {
         std::cout << "  prop       Get properties of a file in an archive\n";
         std::cout << "  extract    Extract files from archive\n";
         std::cout << "  remove     Remove files from archive\n";
-        std::cout << "  verify     Verify archive integrity\n\n";
+        std::cout << "  verify     Verify archive integrity\n";
+        std::cout << "  version    Display version information\n\n";
         
         std::cout << "Options:\n";
-        std::cout << "  -c <type>      Compression: none, zlib, bzip2, lzma, gzip, lz4, zstd, brotli\n";
+        std::cout << "  -c <type>      Compression: none, zlib, bzip2, lzma, gzip, lz4, zstd, brotli, snappy, lzo\n";
         std::cout << "  -l <level>     Compression level 0-9 (default: 9)\n";
         std::cout << "  -H <type>      Hash: none, md5, sha1, sha256, sha512, sha384, blake2b,\n";
         std::cout << "                 blake2s, sha3-256, sha3-512, ripemd160\n";

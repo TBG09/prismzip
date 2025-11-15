@@ -59,6 +59,7 @@ struct FileMetadata {
     uint32_t permissions;       
     uint32_t uid;               
     uint32_t gid;               
+    bool is_solid;
 };
 
 extern const std::map<std::string, CompressionType> COMPRESSION_MAP;

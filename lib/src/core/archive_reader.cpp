@@ -2,6 +2,7 @@
 #include <prism/core/logging.h>
 #include <fstream>
 #include <cstring>
+#include <iostream>
 
 namespace prism {
 namespace core {
@@ -53,11 +54,13 @@ FileMetadata read_non_solid_file_metadata(std::ifstream& f, uint64_t& current_of
     item.data_start_offset = f.tellg();
     f.seekg(item.compressed_size, std::ios::cur);
     current_offset = f.tellg();
+    item.is_solid = false;
     
     return item;
 }
 
 std::vector<FileMetadata> read_solid_block_metadata(std::ifstream& f, uint64_t& uncompressed_offset_counter, CompressionType& block_comp_type, uint8_t& block_level, uint64_t& compressed_block_size) {
+    log("Debug: Entering read_solid_block_metadata", LOG_DEBUG);
     std::vector<FileMetadata> block_items;
 
     uint64_t metadata_size;
@@ -69,12 +72,58 @@ std::vector<FileMetadata> read_solid_block_metadata(std::ifstream& f, uint64_t& 
     if (f.gcount() < metadata_size) throw std::runtime_error("Unexpected EOF while reading solid block metadata.");
     
     uint64_t current_data_start_pos = f.tellg();
+    log("Debug: read_solid_block_metadata - current_data_start_pos: " + std::to_string(current_data_start_pos), LOG_DEBUG);
+
+    // Search for the next SOLID_BLOCK_MAGIC or EOF to determine compressed_block_size
+    uint64_t search_pos = current_data_start_pos;
+    char magic_buffer[4];
+    bool found_next_magic = false;
+    uint64_t next_magic_pos = 0;
 
     f.seekg(0, std::ios::end);
     uint64_t end_of_file = f.tellg();
-    f.seekg(current_data_start_pos);
+    f.seekg(current_data_start_pos); // Reset to start of compressed data
+    log("Debug: read_solid_block_metadata - end_of_file: " + std::to_string(end_of_file), LOG_DEBUG);
 
-    compressed_block_size = end_of_file - current_data_start_pos;
+    while (search_pos < end_of_file) {
+        f.seekg(search_pos);
+        if (f.fail()) { // Check if seek failed (e.g., past EOF)
+            log("Debug: read_solid_block_metadata - Seek failed at search_pos: " + std::to_string(search_pos), LOG_DEBUG);
+            break;
+        }
+
+        // Read 4 bytes to check for magic
+        if (end_of_file - search_pos >= 4) {
+            f.read(magic_buffer, 4);
+            if (f.gcount() == 4) { // Successfully read 4 bytes
+                if (strncmp(magic_buffer, SOLID_BLOCK_MAGIC, 4) == 0) {
+                    found_next_magic = true;
+                    next_magic_pos = search_pos;
+                    log("Debug: read_solid_block_metadata - Found SOLID_BLOCK_MAGIC at: " + std::to_string(next_magic_pos), LOG_DEBUG);
+                    break;
+                }
+            } else {
+                // Less than 4 bytes read, likely near EOF
+                log("Debug: read_solid_block_metadata - Less than 4 bytes read at search_pos: " + std::to_string(search_pos) + ", gcount: " + std::to_string(f.gcount()), LOG_DEBUG);
+                break; 
+            }
+        } else {
+            // Not enough bytes left for a full magic string
+            log("Debug: read_solid_block_metadata - Not enough bytes for magic at search_pos: " + std::to_string(search_pos), LOG_DEBUG);
+            break;
+        }
+        search_pos++; // Move to the next byte to search
+    }
+
+    if (found_next_magic) {
+        compressed_block_size = next_magic_pos - current_data_start_pos;
+        log("Debug: read_solid_block_metadata - Calculated compressed_block_size (found magic): " + std::to_string(compressed_block_size), LOG_DEBUG);
+    } else {
+        compressed_block_size = end_of_file - current_data_start_pos;
+        log("Debug: read_solid_block_metadata - Calculated compressed_block_size (to EOF): " + std::to_string(compressed_block_size), LOG_DEBUG);
+    }
+    
+    f.seekg(current_data_start_pos); // Reset file pointer to the beginning of the compressed block
 
     size_t buffer_pos = 0;
     while (buffer_pos < metadata_size) {
@@ -116,6 +165,7 @@ std::vector<FileMetadata> read_solid_block_metadata(std::ifstream& f, uint64_t& 
         item.header_start_offset = current_data_start_pos;
         item.data_start_offset = uncompressed_offset_counter;
         item.compressed_size = compressed_block_size;
+        item.is_solid = true;
         
         uncompressed_offset_counter += item.file_size;
         block_items.push_back(item);
@@ -143,7 +193,7 @@ std::vector<FileMetadata> read_archive_metadata(const std::string& archive_file)
     f.read(magic, 4);
     f.read((char*)&version, 2);
     
-    if (strncmp(magic, "PRZM", 4) != 0 || version != 1) {
+    if (strncmp(magic, "PRZM", 4) != 0 || version != 2) {
         log("Error: Invalid archive format.", LOG_ERROR);
         throw std::runtime_error("Invalid archive format.");
     }
@@ -214,7 +264,7 @@ bool is_solid_archive(const std::string& archive_file) {
     f.read((char*)&version, 2);
     if (f.gcount() < 2) return false;
     
-    if (strncmp(magic, "PRZM", 4) != 0 || version != 1) {
+    if (strncmp(magic, "PRZM", 4) != 0 || version != 2) {
         return false;
     }
     

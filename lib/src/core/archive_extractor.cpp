@@ -241,7 +241,7 @@ ArchiveExtractionResult extract_archive(const std::string& archive_file, const s
     std::vector<FileMetadata> non_solid_files;
 
     for (const auto& item : items_to_process) {
-        if (item.header_start_offset == item.data_start_offset) {
+        if (!item.is_solid) {
             non_solid_files.push_back(item);
         } else {
             solid_blocks[item.header_start_offset].push_back(item);

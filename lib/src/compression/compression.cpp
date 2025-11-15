@@ -6,8 +6,8 @@
 #include "lz4.h"
 #include "zstd.h"
 #include "brotli.h"
-#include "snappy.h" // New include
-#include "lzo.h"    // New include
+#include "snappy.h" 
+#include "lzo.h"    
 #include <stdexcept> 
 
 namespace prism {
@@ -31,9 +31,9 @@ std::vector<char> compress_data(const std::vector<char>& data, prism::core::Comp
         case prism::core::CompressionType::BROTLI:
             return brotli_compress(data, level);
         case prism::core::CompressionType::SNAPPY:
-            return snappy_compress(data); // Call new function
+            return snappy_compress(data); 
         case prism::core::CompressionType::LZO:
-            return lzo_compress(data);    // Call new function
+            return lzo_compress(data);    
         default:
             prism::core::log("Warning: Compression type not supported, storing uncompressed", prism::core::LOG_WARN);
             return data;
@@ -58,9 +58,9 @@ std::vector<char> decompress_data(const std::vector<char>& data, prism::core::Co
         case prism::core::CompressionType::BROTLI:
             return brotli_decompress(data, original_size);
         case prism::core::CompressionType::SNAPPY:
-            return snappy_decompress(data, original_size); // Call new function
+            return snappy_decompress(data, original_size); 
         case prism::core::CompressionType::LZO:
-            return lzo_decompress(data, original_size);    // Call new function
+            return lzo_decompress(data, original_size);    
         default:
             prism::core::log("Warning: Decompression type not supported", prism::core::LOG_WARN);
             return data;

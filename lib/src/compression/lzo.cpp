@@ -6,7 +6,6 @@
 namespace prism {
 namespace compression {
 
-// LZO requires a work memory buffer for compression
 #define HEAP_ALLOC(var,size) \
     lzo_align_t __LZO_MMODEL var [ ((size) + (sizeof(lzo_align_t) - 1)) / sizeof(lzo_align_t) ]
 
@@ -17,7 +16,7 @@ std::vector<char> lzo_compress(const std::vector<char>& data) {
         throw std::runtime_error("LZO initialization failed.");
     }
 
-    std::vector<char> compressed_data(data.size() + data.size() / 16 + 64 + 3); // LZO worst case
+    std::vector<char> compressed_data(data.size() + data.size() / 16 + 64 + 3); 
     lzo_uint out_len;
 
     int r = lzo1x_1_compress(reinterpret_cast<const lzo_bytep>(data.data()), data.size(),
@@ -42,7 +41,7 @@ std::vector<char> lzo_decompress(const std::vector<char>& data, size_t original_
 
     int r = lzo1x_decompress_safe(reinterpret_cast<const lzo_bytep>(data.data()), data.size(),
                                  reinterpret_cast<lzo_bytep>(decompressed_data.data()), &out_len,
-                                 NULL); // No work memory needed for decompression
+                                 NULL); 
 
     if (r == LZO_E_OK && out_len == original_size) {
         return decompressed_data;

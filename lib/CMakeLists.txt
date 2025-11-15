@@ -14,7 +14,7 @@ pkg_check_modules(SNAPPY REQUIRED snappy)
 pkg_check_modules(LZO REQUIRED lzo2)
 
 # Gather source files
-file(GLOB_RECURSE LIB_SOURCES "src/*.cpp" "src/**/*.cpp" "src/**/**/*.cpp" "src/compression/snappy.cpp" "src/compression/lzo.cpp")
+file(GLOB_RECURSE LIB_SOURCES "src/*.cpp" "src/**/*.cpp" "src/**/**/*.cpp")
 
 add_library(prismzip_lib STATIC ${LIB_SOURCES})
 

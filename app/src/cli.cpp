@@ -416,7 +416,7 @@ int run_cli(int argc, char* argv[]) {
         std::cout << "  version    Display version information\n\n";
         
         std::cout << "Options:\n";
-        std::cout << "  -c <type>      Compression: none, zlib, bzip2, lzma, gzip, lz4, zstd, brotli, snappy, lzo\n";
+        std::cout << "  -c <type>      Compression: none, zlib, bzip2, lzma, gzip, lz4, zstd, brotli, snappy, lzo, lzma2\n";
         std::cout << "  -l <level>     Compression level 0-9 (default: 9)\n";
         std::cout << "  -H <type>      Hash: none, md5, sha1, sha256, sha512, sha384, blake2b,\n";
         std::cout << "                 blake2s, sha3-256, sha3-512, ripemd160\n";
@@ -475,10 +475,7 @@ int run_cli(int argc, char* argv[]) {
             std::cout << "Usage: prismzip create <archive_file> <paths...> [options]\n\n";
             std::cout << "Create a new archive from files and directories.\n\n";
             std::cout << "Required:\n";
-            std::cout << "  <archive_file>  Name of the archive to create (e.g., backup.przm)\n";
-            std::cout << "  <paths...>      One or more files or directories to add\n\n";
-            std::cout << "Options:\n";
-            std::cout << "  -c <type>       Compression type (default: zlib)\n";
+            std::cout << "  -c <type>       Compression type (default: zlib): none, zlib, bzip2, lzma, gzip, lz4, zstd, brotli, snappy, lzo, lzma2\n";
             std::cout << "  -l <level>      Compression level 0-9 (default: 9)\n";
         std::cout << "  -s, --solid     Create a solid archive for better compression\n";
             std::cout << "  -H <type>       Hash algorithm for integrity checking\n";
@@ -493,7 +490,7 @@ int run_cli(int argc, char* argv[]) {
             std::cout << "  <archive_file>  Existing archive file\n";
             std::cout << "  <paths...>      One or more files or directories to add\n\n";
             std::cout << "Options:\n";
-            std::cout << "  -c <type>       Compression type (default: zlib)\n";
+            std::cout << "  -c <type>       Compression type (default: zlib): none, zlib, bzip2, lzma, gzip, lz4, zstd, brotli, snappy, lzo, lzma2\n";
             std::cout << "  -l <level>      Compression level 0-9 (default: 9)\n";
             std::cout << "  -s, --solid     Append as a solid block\n";
             std::cout << "  -H <type>       Hash algorithm\n";

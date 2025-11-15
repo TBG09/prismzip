@@ -3,6 +3,7 @@
 #include "zlib.h"
 #include "bzip2.h"
 #include "lzma.h"
+#include "lzma2.h"
 #include "lz4.h"
 #include "zstd.h"
 #include "brotli.h"
@@ -34,6 +35,8 @@ std::vector<char> compress_data(const std::vector<char>& data, prism::core::Comp
             return snappy_compress(data); 
         case prism::core::CompressionType::LZO:
             return lzo_compress(data);    
+        case prism::core::CompressionType::LZMA2:
+            return lzma2_compress(data, level);
         default:
             prism::core::log("Warning: Compression type not supported, storing uncompressed", prism::core::LOG_WARN);
             return data;
@@ -61,6 +64,8 @@ std::vector<char> decompress_data(const std::vector<char>& data, prism::core::Co
             return snappy_decompress(data, original_size); 
         case prism::core::CompressionType::LZO:
             return lzo_decompress(data, original_size);    
+        case prism::core::CompressionType::LZMA2:
+            return lzma2_decompress(data, original_size);
         default:
             prism::core::log("Warning: Decompression type not supported", prism::core::LOG_WARN);
             return data;

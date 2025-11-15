@@ -7,14 +7,14 @@ const std::map<std::string, CompressionType> COMPRESSION_MAP = {
     {"none", CompressionType::NONE}, {"zlib", CompressionType::ZLIB}, {"bzip2", CompressionType::BZIP2}, 
     {"lzma", CompressionType::LZMA}, {"gzip", CompressionType::GZIP}, {"lz4", CompressionType::LZ4},
     {"zstd", CompressionType::ZSTD}, {"brotli", CompressionType::BROTLI},
-    {"snappy", CompressionType::SNAPPY}, {"lzo", CompressionType::LZO}
+    {"snappy", CompressionType::SNAPPY}, {"lzo", CompressionType::LZO}, {"lzma2", CompressionType::LZMA2}
 };
 
 const std::map<CompressionType, std::string> COMPRESSION_NAMES = {
     {CompressionType::NONE, "none"}, {CompressionType::ZLIB, "zlib"}, {CompressionType::BZIP2, "bzip2"},
     {CompressionType::LZMA, "lzma"}, {CompressionType::GZIP, "gzip"}, {CompressionType::LZ4, "lz4"},
     {CompressionType::ZSTD, "zstd"}, {CompressionType::BROTLI, "brotli"},
-    {CompressionType::SNAPPY, "snappy"}, {CompressionType::LZO, "lzo"}
+    {CompressionType::SNAPPY, "snappy"}, {CompressionType::LZO, "lzo"}, {CompressionType::LZMA2, "lzma2"}
 };
 
 const std::map<std::string, HashType> HASH_MAP = {

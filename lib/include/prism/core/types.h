@@ -20,7 +20,8 @@ enum class CompressionType : uint8_t {
     ZSTD = 6,
     BROTLI = 7,
     SNAPPY = 8,
-    LZO = 9
+    LZO = 9,
+    LZMA2 = 10
 };
 
 enum class HashType : uint8_t { 

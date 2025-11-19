@@ -9,20 +9,22 @@
 #include <fstream>
 #include <iostream>
 #include <set>
-#include <sys/stat.h>
+#include <filesystem>
 #include <thread>
 #include <mutex>
 #include <atomic>
 #include <future>
 #include <stdexcept>
 
+namespace fs = std::filesystem;
+
 namespace prism {
 namespace core {
 
 void extract_non_solid_file(const std::string& archive_file, const FileMetadata& item, const std::string& output_dir, bool no_overwrite, bool no_verify, std::atomic<int>& files_extracted, std::atomic<int>& files_skipped, std::atomic<uint64_t>& bytes_extracted, std::atomic<int>& hash_mismatches, std::atomic<int>& hashes_checked, std::atomic<int>& progress_counter, size_t total_items_to_process, std::mutex& cout_mutex, bool raw_output, bool use_basic_chars, bool no_preserve_props, std::chrono::steady_clock::time_point start_time) {
-    std::string out_path = output_dir + "/" + item.path;
+    fs::path out_path = fs::path(output_dir) / item.path;
 
-    if (no_overwrite && file_exists(out_path)) {
+    if (no_overwrite && file_exists(out_path.string())) {
         {
             std::lock_guard<std::mutex> lock(cout_mutex);
             log("Skipping existing file: '" + item.path + "'", LOG_VERBOSE);
@@ -31,10 +33,8 @@ void extract_non_solid_file(const std::string& archive_file, const FileMetadata&
         return;
     }
     
-    size_t pos = out_path.find_last_of('/');
-    if (pos != std::string::npos) {
-        std::string dir = out_path.substr(0, pos);
-        system(("mkdir -p \"" + dir + "\"" ).c_str());
+    if (out_path.has_parent_path()) {
+        fs::create_directories(out_path.parent_path());
     }
     
     std::vector<char> compressed(item.compressed_size);
@@ -55,7 +55,7 @@ void extract_non_solid_file(const std::string& archive_file, const FileMetadata&
     if (!out_file) {
         {
             std::lock_guard<std::mutex> lock(cout_mutex);
-            log("Warning: Cannot create file: '" + out_path + "'", LOG_WARN);
+            log("Warning: Cannot create file: '" + out_path.string() + "'", LOG_WARN);
         }
         return;
     }
@@ -64,7 +64,7 @@ void extract_non_solid_file(const std::string& archive_file, const FileMetadata&
     out_file.close();
 
     if (!no_preserve_props) {
-        set_file_properties(out_path, item);
+        set_file_properties(out_path.string(), item);
     }
     
     files_extracted++;
@@ -72,7 +72,7 @@ void extract_non_solid_file(const std::string& archive_file, const FileMetadata&
     
     if (!no_verify && item.hash_type != HashType::NONE) {
         hashes_checked++;
-        std::string calculated_hash = hashing::calculate_hash(out_path, item.hash_type);
+        std::string calculated_hash = hashing::calculate_hash(out_path.string(), item.hash_type);
         if (calculated_hash != item.file_hash) {
             hash_mismatches++;
             {
@@ -122,9 +122,9 @@ void extract_solid_block(const std::string& archive_file, const std::vector<File
     log("Debug: decompressed_block.size() = " + std::to_string(decompressed_block.size()), LOG_DEBUG);
 
     for (const auto& item : block_items) {
-        std::string out_path = output_dir + "/" + item.path;
+        fs::path out_path = fs::path(output_dir) / item.path;
 
-        if (no_overwrite && file_exists(out_path)) {
+        if (no_overwrite && file_exists(out_path.string())) {
             {
                 std::lock_guard<std::mutex> lock(cout_mutex);
                 log("Skipping existing file: '" + item.path + "'", LOG_VERBOSE);
@@ -133,10 +133,8 @@ void extract_solid_block(const std::string& archive_file, const std::vector<File
             continue;
         }
 
-        size_t pos = out_path.find_last_of('/');
-        if (pos != std::string::npos) {
-            std::string dir = out_path.substr(0, pos);
-            system(("mkdir -p \"" + dir + "\"" ).c_str());
+        if (out_path.has_parent_path()) {
+            fs::create_directories(out_path.parent_path());
         }
 
         std::vector<char> file_data(decompressed_block.begin() + item.data_start_offset,
@@ -146,7 +144,7 @@ void extract_solid_block(const std::string& archive_file, const std::vector<File
         if (!out_file) {
             {
                 std::lock_guard<std::mutex> lock(cout_mutex);
-                log("Warning: Cannot create file: '" + out_path + "'", LOG_WARN);
+                log("Warning: Cannot create file: '" + out_path.string() + "'", LOG_WARN);
             }
             continue;
         }
@@ -155,7 +153,7 @@ void extract_solid_block(const std::string& archive_file, const std::vector<File
         out_file.close();
 
         if (!no_preserve_props) {
-            set_file_properties(out_path, item);
+            set_file_properties(out_path.string(), item);
         }
 
         files_extracted++;
@@ -163,7 +161,7 @@ void extract_solid_block(const std::string& archive_file, const std::vector<File
 
         if (!no_verify && item.hash_type != HashType::NONE) {
             hashes_checked++;
-            std::string calculated_hash = hashing::calculate_hash(out_path, item.hash_type);
+            std::string calculated_hash = hashing::calculate_hash(out_path.string(), item.hash_type);
             if (calculated_hash != item.file_hash) {
                 hash_mismatches++;
                 {

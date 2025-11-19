@@ -1,5 +1,20 @@
 # CMake build files
 build/
+build-*/
+
+# Visual Studio files
+.vs/
+*.VC.db
+*.suo
+*.user
+*.sln.docstates
+
+# Build output directories
+[Bb]in/
+[Dd]ebug/
+[Rr]elease/
+x64/
+Win32/
 
 # Compiled binaries
 app/prismzip

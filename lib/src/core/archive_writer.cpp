@@ -11,7 +11,6 @@
 #include <iomanip>
 #include <set>
 #include <filesystem>
-#include <sys/stat.h>
 #include <thread>
 #include <mutex>
 #include <atomic>
@@ -1569,9 +1568,10 @@ uint64_t estimate_archive_size(const std::string& archive_file, const std::vecto
         }
 
         for (const auto& file_path : files_to_process) {
-            struct stat st;
-            if (stat(file_path.c_str(), &st) == 0) {
-                total_uncompressed_size += st.st_size;
+            std::error_code ec;
+            uint64_t size = fs::file_size(file_path, ec);
+            if (!ec) {
+                total_uncompressed_size += size;
             } else {
                 if (ignore_errors) {
                     log("Warning: Could not get size of file: '" + file_path + "' (ignored)", LOG_WARN);

@@ -14,6 +14,10 @@
 #include <stdexcept>
 #include <any>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 namespace prism {
 namespace cli {
 
@@ -28,52 +32,104 @@ bool is_raw_output_en = false;
 bool use_basic_chars = false;
 bool is_detailed_en = false;
 
+#ifdef _WIN32
+enum ConsoleColor {
+    RESET = 7,
+    RED = 12,
+    GREEN = 10,
+    YELLOW = 14,
+    BLUE = 9,
+    CYAN = 11
+};
+
+void set_color(std::ostream& stream, ConsoleColor color) {
+    HANDLE hConsole = GetStdHandle(stream.rdbuf() == std::cout.rdbuf() ? STD_OUTPUT_HANDLE : STD_ERROR_HANDLE);
+    SetConsoleTextAttribute(hConsole, color);
+}
+#else
 const std::string COLOR_RESET = "\033[0m";
 const std::string COLOR_RED = "\033[91m";
 const std::string COLOR_GREEN = "\033[92m";
 const std::string COLOR_YELLOW = "\033[93m";
 const std::string COLOR_BLUE = "\033[94m";
 const std::string COLOR_CYAN = "\033[96m";
+#endif
 
 void output(const std::string& msg) {
     if (is_output_en) {
+#ifdef _WIN32
+        if (color_en) set_color(std::cout, CYAN);
+        std::cout << msg << std::endl;
+        if (color_en) set_color(std::cout, RESET);
+#else
         if (color_en) std::cout << COLOR_CYAN << msg << COLOR_RESET << std::endl;
         else std::cout << msg << std::endl;
+#endif
     }
 }
 
 void sumar(const std::string& msg) {
     if (is_sum_en) {
+#ifdef _WIN32
+        if (color_en) set_color(std::cout, YELLOW);
+        std::cout << msg << std::endl;
+        if (color_en) set_color(std::cout, RESET);
+#else
         if (color_en) std::cout << COLOR_YELLOW << msg << COLOR_RESET << std::endl;
         else std::cout << msg << std::endl;
+#endif
     }
 }
 
 void warn(const std::string& msg) {
     if (is_warn_en) {
+#ifdef _WIN32
+        if (color_en) set_color(std::cerr, YELLOW);
+        std::cerr << msg << std::endl;
+        if (color_en) set_color(std::cerr, RESET);
+#else
         if (color_en) std::cerr << COLOR_YELLOW << msg << COLOR_RESET << std::endl;
         else std::cerr << msg << std::endl;
+#endif
     }
 }
 
 void err(const std::string& msg) {
     if (is_err_en) {
+#ifdef _WIN32
+        if (color_en) set_color(std::cerr, RED);
+        std::cerr << msg << std::endl;
+        if (color_en) set_color(std::cerr, RESET);
+#else
         if (color_en) std::cerr << COLOR_RED << msg << COLOR_RESET << std::endl;
         else std::cerr << msg << std::endl;
+#endif
     }
 }
 
 void verb(const std::string& msg) {
     if (is_verb_en) {
+#ifdef _WIN32
+        if (color_en) set_color(std::cout, BLUE);
+        std::cout << msg << std::endl;
+        if (color_en) set_color(std::cout, RESET);
+#else
         if (color_en) std::cout << COLOR_BLUE << msg << COLOR_RESET << std::endl;
         else std::cout << msg << std::endl;
+#endif
     }
 }
 
 void success(const std::string& msg) {
     if (is_output_en) {
+#ifdef _WIN32
+        if (color_en) set_color(std::cout, GREEN);
+        std::cout << msg << std::endl;
+        if (color_en) set_color(std::cout, RESET);
+#else
         if (color_en) std::cout << COLOR_GREEN << msg << COLOR_RESET << std::endl;
         else std::cout << msg << std::endl;
+#endif
     }
 }
 
@@ -118,6 +174,14 @@ void print_extra_info(const std::string& command, int num_threads, core::Compres
 
 
 int run_cli(int argc, char* argv[]) {
+#ifdef _WIN32
+    // Enable virtual terminal processing for ANSI escape codes on Windows 10+
+    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    DWORD dwMode = 0;
+    GetConsoleMode(hOut, &dwMode);
+    dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+    SetConsoleMode(hOut, dwMode);
+#endif
     core::set_log_handler(cli_log_handler);
 
     if (argc < 2) {
@@ -402,7 +466,13 @@ int run_cli(int argc, char* argv[]) {
     void print_usage() {
         std::cout << "\n";
         if (color_en) {
+#ifdef _WIN32
+            set_color(std::cout, CYAN);
+            std::cout << "PrismZip Archive Utility - C++ Edition" << std::endl;
+            set_color(std::cout, RESET);
+#else
             std::cout << COLOR_CYAN << "PrismZip Archive Utility - C++ Edition" << COLOR_RESET << "\n\n";
+#endif
         } else {
             std::cout << "PrismZip Archive Utility - C++ Edition\n\n";
         }
@@ -471,7 +541,13 @@ int run_cli(int argc, char* argv[]) {
     void print_command_help(const std::string& command) {
         std::cout << "\n";
         if (color_en) {
+#ifdef _WIN32
+            set_color(std::cerr, YELLOW);
+            std::cerr << "Error: Incomplete command arguments" << std::endl;
+            set_color(std::cerr, RESET);
+#else
             std::cout << COLOR_YELLOW << "Error: Incomplete command arguments" << COLOR_RESET << "\n\n";
+#endif
         } else {
             std::cout << "Error: Incomplete command arguments\n\n";
         }

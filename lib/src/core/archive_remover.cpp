@@ -7,8 +7,10 @@
 #include <fstream>
 #include <iostream>
 #include <set>
-#include <cstdio>
+#include <filesystem>
 #include <stdexcept>
+
+namespace fs = std::filesystem;
 
 namespace prism {
 namespace core {
@@ -79,8 +81,10 @@ void remove_from_archive(const std::string& archive_file, const std::vector<std:
     original_in.close();
     temp_out.close();
 
-    if (std::rename(temp_archive_file.c_str(), archive_file.c_str()) != 0) {
-        throw std::runtime_error("Failed to replace original archive with rebuilt one.");
+    std::error_code ec;
+    fs::rename(temp_archive_file, archive_file, ec);
+    if (ec) {
+        throw std::runtime_error("Failed to replace original archive with rebuilt one: " + ec.message());
     }
 
     log("Successfully removed " + std::to_string(all_items.size() - items_to_keep.size()) + " file(s).", LOG_SUCCESS);

@@ -2,6 +2,8 @@
 
 A modular, high-performance archiving utility written in C++.
 
+## !!! Project is in a broken state! !!!
+
 ## Structure
 
 This project is split into two main parts:
